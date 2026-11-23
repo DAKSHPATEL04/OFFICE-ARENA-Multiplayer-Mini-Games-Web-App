@@ -1,0 +1,21 @@
+{
+  "platform": "Office Arena Web Game Platform v6.0",
+  "technologies": [
+    { "name": "Phaser 3", "license": "MIT", "purpose": "2D WebGL/Canvas game rendering and scale manager" },
+    { "name": "React 19", "license": "MIT", "purpose": "Arena Glass UI shell, lobby, and HUD overlays" },
+    { "name": "Tailwind CSS v4", "license": "MIT", "purpose": "Responsive styling and Dark/Light/High-Contrast themes" },
+    { "name": "ws", "license": "MIT", "purpose": "Authoritative multiplayer WebSocket transport" },
+    { "name": "Lucide Icons", "license": "ISC", "purpose": "Vector UI iconography" },
+    { "name": "qrcode", "license": "MIT", "purpose": "Client-side room invite QR generation" },
+    { "name": "vite-plugin-pwa", "license": "MIT", "purpose": "Installable PWA manifest and offline Service Worker" }
+  ],
+  "fonts": [
+    { "name": "Fredoka", "license": "SIL Open Font License" },
+    { "name": "Nunito", "license": "SIL Open Font License" },
+    { "name": "JetBrains Mono", "license": "SIL Open Font License" }
+  ],
+  "assets": [
+    { "name": "Tank Arena Sprites & Maps", "author": "Procedural Canvas/Phaser Graphics", "license": "Original" },
+    { "name": "Arena Sound Effects & Loop", "author": "Web Audio API Synthesizer", "license": "Original" }
+  ]
+}

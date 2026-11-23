@@ -1,0 +1,47 @@
+{
+  "app": {
+    "name": "Office Arena",
+    "tagline": "Quick multiplayer games for office teams and friends"
+  },
+  "nav": {
+    "games": "Games",
+    "rooms": "Rooms",
+    "join": "Join",
+    "profile": "Profile",
+    "settings": "Settings",
+    "help": "How to Play",
+    "credits": "Credits"
+  },
+  "hub": {
+    "searchPlaceholder": "Search games or enter 4-letter code...",
+    "joinRoom": "Join Room",
+    "recentRooms": "Recent Rooms",
+    "rejoin": "Rejoin",
+    "comingSoon": "Coming Soon",
+    "newBadge": "New"
+  },
+  "room": {
+    "createTitle": "Create a Room",
+    "joinTitle": "Join a Room",
+    "openRooms": "Open Rooms",
+    "quickJoin": "Quick Join",
+    "noOpenRooms": "No open rooms right now. Create one and invite your team!",
+    "waitingForFriend": "Waiting for a friend",
+    "invite": "Invite",
+    "ready": "Ready",
+    "notReady": "Not Ready",
+    "start": "Start Match",
+    "startAnyway": "Start anyway?",
+    "takeSeat": "Take a seat",
+    "joinMatch": "Join match",
+    "leave": "Leave"
+  },
+  "errors": {
+    "roomNotFound": "Room not found. Double-check the 4-letter code.",
+    "roomFull": "Room is full. Watch as a spectator?",
+    "matchRunning": "Match already running. Watch as a spectator?",
+    "wrongPassword": "Wrong room password. Try again.",
+    "rateLimited": "Too many attempts. Please wait a moment.",
+    "offlineOnlineDisabled": "You are offline. Local Party and Solo vs Bots still work."
+  }
+}

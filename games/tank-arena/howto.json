@@ -1,0 +1,33 @@
+{
+  "goal": "Capture the enemy flag, win team skirmishes, or outlast up to 11 rivals in Free For All.",
+  "inviteSteps": [
+    "Click Create Room on Tank Arena and pick Private or Open visibility.",
+    "Share the 4-letter Room Code, direct link, WhatsApp invite, or QR code from the Lobby.",
+    "Up to 12 friends join from PC, phone, or tablet—plus bots can fill any empty seat."
+  ],
+  "steps": [
+    {
+      "title": "One-Hand Space + One-Hand Mouse (Default)",
+      "body": "Your tank rotates automatically. Hold Spacebar with one hand to drive forward where it faces, and Left Click with your mouse to fire and reverse spin direction."
+    },
+    {
+      "title": "Default Missile Fire & 5-Ammo Rack",
+      "body": "Your tank fires sharp standard missiles using a 5-shot rack (1.5s reload each). Save your shots to catch opponents cleanly!"
+    },
+    {
+      "title": "3 Power Boxes: Shield, Speed 2× & Fireball",
+      "body": "🛡️ Shield wraps a protective bubble around your tank that blocks opponent attacks (6s). ⚡ Speed 2× doubles your tank speed (6s). 🔥 Fireball grants Unlimited Rapid Fireball shots (7s)!"
+    },
+    {
+      "title": "Score to Win",
+      "body": "In Flag mode, touch the enemy flag and carry it back to your team pad. In Team Fight & FFA, score points by destroying enemy tanks."
+    }
+  ],
+  "tips": [
+    "In Arcade (Space + Click), release Spacebar to let your tank auto-rotate, hold Spacebar to charge straight ahead, and Left Click to shoot & reverse spin!",
+    "Bricks break on the second hit, while yellow-black steel barriers never break.",
+    "Dropped flags auto-return in 10 seconds, or instantly if a teammate drives over them.",
+    "Spawn shields last 1.5 seconds and drop immediately as soon as you fire.",
+    "Press Tab on PC (or the scoreboard button on touch) anytime to check match stats."
+  ]
+}

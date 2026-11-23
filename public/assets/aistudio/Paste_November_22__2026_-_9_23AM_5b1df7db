@@ -1,0 +1,1347 @@
+# OFFICE ARENA: WEB GAME PLATFORM v6.0 (FULL DOCUMENT)
+### Version 1 = the platform + ONE game (Tank Arena). More games are added later, one at a time, without changing the platform.
+### Online rooms for 2 to 12 players: create a room, send the code, all your friends join. Works on PC (keyboard + mouse), phone and tablet (touch), gamepad, and installs as an app (PWA).
+### This document REPLACES all earlier versions. Do not summarize it and do not drop any detail.
+
+---
+
+## WHAT CHANGED IN v6.0
+1. **Online rooms hold 2 to 12 players** (humans + bots) and up to 20 spectators. Friends join by **code, link, QR or WhatsApp**. Open rooms list and Quick Join added (Sections 6, 8, 9, 11).
+2. **Tank Arena supports teams up to 6v6 and Free For All up to 12**, with auto-scaling points, time and captures, spawn pools, name tags, a kill feed and a bigger scoreboard (Sections 12 to 14, 17).
+3. **Lobby redesigned for up to 12 players** with waiting slots, ready rules, "Start anyway", late join, host transfer, kick and ban (Sections 8, 9).
+4. **Networking rewritten for 12 players:** compact snapshots, server limits, load test (Sections 11, 22, 23, 24).
+5. **Local Party stays at 2 to 4 players on one screen.** More players use an online room.
+6. New edge cases P21 to P30 and T21 to T30, new docs (`ROOMS.md`), new QA rows.
+
+---
+
+## 0. HOW TO USE THIS DOCUMENT
+1. Open Google AI Studio, then Build, new app. If you see "Failed to create project", create a Google Cloud project at console.cloud.google.com first and import it (Section 24).
+2. Paste **Section 1 (Master Prompt)** first.
+3. Then paste **one phase at a time** (Section 22). Each phase lists which sections to paste. Always keep Sections 1, 2 and 5 in the conversation.
+4. After each phase: test, fix, report. Do not start the next phase until the test passes.
+5. Multiplayer test: 2 to 4 browser tabs first, then the 12-client load test (Section 22, P7), then a real test with friends (Section 24).
+6. If something breaks, use the debug prompts in Section 25.
+
+Table of contents: 1 Master prompt. 2 Product overview. 3 Scope of version 1. 4 Platform architecture. 5 How to add a game. 6 Platform features (rooms and friends). 7 UI design system. 8 Screens and wireframes. 9 User flows. 10 Input and controls. 11 Networking and rooms. 12 Game 1: Tank Arena (rules). 13 Tank Arena settings. 14 Tank Arena maps. 15 Bots. 16 Animation and effects. 17 HUD. 18 Audio. 19 Art assets. 20 Settings, saving, accessibility. 21 Rules and edge cases. 22 Build phases. 23 QA checklist. 24 Deployment and the app. 25 Debug prompts. 26 Documents and deliverables. 27 Game backlog.
+
+---
+
+## 1. MASTER PROMPT (paste this first)
+
+You are a senior web game developer, UI designer, network programmer and QA engineer. Build **Office Arena**, a modern web game platform for office colleagues, with **Tank Arena** as game #1. A host creates a room, shares a 4-letter code or a link, and **up to 12 friends join and play together**, each on their own device. Players use a PC (keyboard and mouse), a phone or tablet (touch), or a gamepad. The same website also installs as an app (PWA).
+
+Strict rules:
+- **Platform and games are separate.** The platform (hub, rooms, lobby, chat, settings, input, audio, network, UI kit) contains NO game rules. A game is a folder in `/games/<game-id>` that plugs in through the `GameModule` interface (Section 5). Adding a game = one new folder + one line in `/games/registry.ts`. No platform file may be edited to add a game.
+- Build **only Tank Arena** now. Also build a tiny `_template` game that proves the plug-in system works.
+- **Three ways to play:** Online Rooms (2 to 12 players, each on their own device), Local Party (2 to 4 people on one screen), Solo vs Bots. All three use the same shared game simulation.
+- **Authoritative Node.js server** for online play (Section 11). Local Party and Solo need no server and work offline.
+- Rendering: Phaser 3 for the game, HTML/CSS/TypeScript for all menus (Vite + TypeScript). PNG sprites with code-drawn fallbacks; the game must never show a blank screen.
+- Every tunable number lives in `config.ts` (platform: `/platform/shared/config.ts`, game: `/games/tank-arena/shared/config.ts`). No magic numbers elsewhere. The simulation runs on a fixed step (1/30 s) with a seeded random generator and never uses `Date.now()` inside the step.
+- The UI follows Section 7 exactly and works on PC, tablet and phone (Section 8). Controls follow Section 10 exactly. Rooms follow Sections 6, 9 and 11 exactly.
+- Implement every row of Section 21 (edge cases).
+- Everything original: art, names, fonts, music, code. No copyrighted material. Map layouts in Section 14 are inspired by a reference and must not be copied pixel for pixel.
+- Work phase by phase. Never say something works if it was not tested. Zero console errors, 60 FPS on a normal PC and a mid phone, also with 12 players.
+- Edit only the files that need to change; never rewrite the whole project; keep `PROGRESS.md` (every feature NOT STARTED / BUILT / TESTED / BUGGY). If a reply is cut off, continue exactly where you stopped.
+- No AI/Gemini API calls from the game. No login. No personal data stored on the server.
+
+---
+
+## 2. PRODUCT OVERVIEW
+
+| Item | Decision |
+|---|---|
+| Product | **Office Arena**: a hub of quick multiplayer games for office colleagues and friends |
+| Game #1 | **Tank Arena**: 2D top-down tank battles on one screen (Flag, Team Fight, Free For All) |
+| Players | **Online room: 2 to 12 players** (humans + bots), up to 20 spectators. **Local Party: 2 to 4** on one screen. Solo: you + 1 to 11 bots |
+| Users | Colleagues and friends on PC (keyboard and mouse), phone and tablet (touch), gamepad; a TV host (optional) |
+| Play modes | Online Rooms, Local Party, Solo vs Bots |
+| Accounts | None. Nickname, color and icon only, saved on the device |
+| Tech | Vite + TypeScript, Phaser 3 (games), HTML/CSS UI, Node.js 20 + Express + `ws` (server) |
+| Installable | PWA (Add to Home Screen, offline for Local Party and Solo) |
+| Languages | English first. All text lives in `/platform/i18n/en.json` so more languages (for example Hindi) can be added later |
+| Hosting | AI Studio deploy (Cloud Run) or an office PC on the LAN |
+| Success | A host creates a room and sends the code; 11 friends open the link and are in the lobby within 30 seconds, and a match of 12 runs smoothly |
+
+---
+
+## 3. SCOPE OF VERSION 1
+**In:** Hub, Game Detail page, Create Room (name, private or open, password, max players), Join by code, link, QR and Open rooms list, Quick Join, Lobby for up to 12 players (teams, ready, chat, settings, map preview, invite panel), match flow, late join, spectators, Results, Rematch, Local Party (up to 4), Solo vs Bots, Settings, Profile (local), How to Play, Credits, Control Setup, Touch Controls Editor, practice range, PWA, themes, command palette, one game (Tank Arena) with 3 modes and 5 maps, bots, sounds, animations, mirrored HUD for Local Party, the `_template` game, and a 12-client load test.
+**Not in v1:** accounts, friend lists stored on a server, global leaderboards, voice chat, payments, user-made maps, more than one real game, spectator chat, a store-app build (the PWA is the app; a wrapper is optional later), phone-as-controller, Cup mode.
+
+---
+
+## 4. PLATFORM ARCHITECTURE
+
+### 4.1 Folder structure
+```
+/platform
+  /client
+    /ui          design system components (Section 7), screens (Section 8)
+    /core        InputManager, AudioManager, AssetManager, SettingsStore, i18n, Router
+    /net         NetworkManager (WebSocket), LocalRoom, RoomClient
+    /modes       online/, local-party/, solo/ launchers
+  /server        Express + ws, RoomManager, Room, OpenRoomList, rate limits, reconnect, host migration
+  /shared        protocol.ts, GameModule.ts, config.ts, seededRandom.ts, types
+/games
+  registry.ts                  one line per game
+  /tank-arena
+    module.ts                  exports the GameModule
+    /shared                    config.ts, sim.ts (physics, rules), spawnPool.ts, maps/, bots/
+    /server                    TankArenaRoom.ts
+    /client                    Phaser scene, HUD, effects, lobby slots, practice range
+    /assets                    PNG, audio (optional)
+    howto.json                 how-to-play data (steps, controls per device)
+  /_template                   tiny sample game (copy this folder to start a new game)
+/tools
+  loadtest.ts                  simulates many clients and rooms (Section 22, P7)
+/public                        manifest.webmanifest, icons, service worker
+/docs                          README.md, PLATFORM.md, GAMES.md, ROOMS.md, ...
+```
+
+### 4.2 Who does what
+| Platform (built once) | Game (built per game) |
+|---|---|
+| Hub, game cards, search, filters, favorites | Game rules, physics, maps, scoring |
+| Room codes, join links, QR, passwords, **open rooms list, quick join**, kick, ban, host migration and transfer, reconnect (60 s), spectators, late-join queue | Game state, bots, results data |
+| Lobby shell: players, teams (game says team sizes), ready, chat, invite, settings form built from `settingsSchema` | Mode cards, map cards, map preview art, extras for the lobby |
+| InputManager and Control Setup screen built from the game's control styles | Which logical actions mean what in this game |
+| Match state machine `LOBBY -> LOADING -> COUNTDOWN -> PLAYING -> RESULTS` | In-game scene (Phaser), HUD, effects, sounds |
+| Results screen, scoreboard component, toasts, modals, settings, profile, command palette | Result columns, awards |
+| Socket handling, validation, rate limits, snapshot transport | Input validation and the simulation step |
+| PWA, offline cache, fullscreen, wake lock, audio unlock | Asset list (lazy loaded) |
+
+### 4.3 Lazy loading
+Each game loads with a dynamic `import()` only when the player opens it. The Hub must load in under 2 seconds on 4G (under 300 KB of JS before games).
+
+### 4.4 Platform API version
+`PLATFORM_API = 1` in `/platform/shared/config.ts`. Each game declares `requires: 1`. If the platform changes in a breaking way the number goes up and old games show "needs update". This keeps 30 games safe.
+
+---
+
+## 5. HOW TO ADD A GAME (30-game readiness)
+
+### 5.1 The GameModule interface (`/platform/shared/GameModule.ts`)
+```ts
+interface GameModule {
+  id: string;                          // "tank-arena" (lowercase, dashes, unique)
+  requires: number;                    // platform API version
+  meta: {
+    name: string; tagline: string; description: string;
+    icon: string;                      // 512x512 PNG path
+    banner: string;                    // 1280x720 PNG path
+    tags: string[];                    // "action", "party", "strategy", "quick", "team"...
+    minPlayers: number; maxPlayers: number; defaultMaxPlayers: number;
+    maxSpectators: number;
+    maxLocalPlayers: number;           // players on one screen in Local Party (Tank Arena: 4)
+    teamSize?: { min: number; max: number };   // per team, for team modes (Tank Arena: 1 to 6)
+    avgMinutes: number;                // shown on the card
+    supports: { online: boolean; localParty: boolean; solo: boolean };
+    devices: { keyboardMouse: boolean; touch: boolean; gamepad: boolean };
+  };
+  modes: ModeDef[];                    // id, name, plan text, tip, illustration, team type, min/max players
+  maps?: MapDef[];                     // id, name, thumbnail, bestFor, recommendedPlayers, description
+  settingsSchema: SettingDef[];        // the lobby settings form is BUILT from this
+  presets?: PresetDef[];
+  controlStyles: ControlStyleDef[];    // id, name, devices, bindings, demo animation, recommended flag
+  controls: ControlsDoc;               // per device list of {input, action, hint}
+  howTo: HowToDoc;                     // steps with images
+  results: ResultsSchema;              // columns for the results screen, award rules
+  assets: AssetDef[];                  // lazy-loaded files, with code-drawn fallbacks
+  tickRate: number;                    // sim Hz (30 for real time, 0 for turn based)
+  createServerRoom(ctx: RoomContext): GameRoom;
+  createClientScene(ctx: ClientContext): GameClient;
+  createBot?(difficulty: string): BotBrain;
+}
+interface GameRoom {
+  onPlayerJoin(p): void; onPlayerLeave(p): void; onReconnect(p): void;
+  onLateJoin?(p): boolean;                               // may refuse (returns false)
+  onInput(playerId: string, payload: unknown): void;     // payload belongs to the game
+  tick(dt: number): void;
+  getSnapshot(): unknown;
+  getEvents(): unknown[];
+  isFinished(): MatchResult | null;
+}
+```
+
+### 5.2 Logical actions (so every game works on every device)
+| Logical action | Keyboard / mouse | Touch | Gamepad |
+|---|---|---|---|
+| `move` (x, y, -1 to 1) | W A S D / arrows | virtual stick (left side) | left stick |
+| `look` (x, y or angle) | mouse position | virtual stick (right side) or touch point | right stick |
+| `primary` (press, hold, release) | left mouse click or Space (per style) | big on-screen button or tap anywhere | A button / RT |
+| `secondary` | right mouse click or Shift | second on-screen button | B button |
+| `action1` to `action4` | Q E R F or Space (per style) | extra on-screen buttons | X Y LB RB |
+| `pause` | Esc | menu button | Start |
+Each **ControlStyleDef** says how raw input maps to these actions for one device. The platform draws only the on-screen controls the chosen style needs and builds the Control Setup screen (8.13) from the styles.
+
+### 5.3 Add-a-game checklist (every new game, in order)
+1. Copy `/games/_template` to `/games/<new-id>`.
+2. Fill `meta`, `modes`, `settingsSchema`, `controlStyles`, `controls`, `howTo`, `results`, `assets`.
+3. Write the shared simulation (pure functions, no browser or Node dependencies) with unit tests.
+4. Write `createServerRoom` and `createClientScene`.
+5. Add one line in `/games/registry.ts`.
+6. Check: Hub card, Game Detail page, Create Room, Open rooms, lobby form built from the schema, Control Setup, Local Party and Solo if declared.
+7. Run the game QA template (Section 23).
+8. Update `docs/GAMES.md` and `credits.json`.
+**Acceptance rule:** if you had to edit any file inside `/platform` to add the game (other than the registry line), the platform is not ready; fix the platform first.
+
+### 5.4 Registry example
+```ts
+// /games/registry.ts
+export const GAMES = [
+  () => import('./tank-arena/module'),
+  // () => import('./next-game/module'),   // add one line per game
+];
+```
+
+### 5.5 The Hub with 30 games
+Responsive grid of game cards; filters (All, Action, Party, Strategy, Quick under 5 min, Team, 2 players, 3 to 4 players, 5 or more players, Favorites); search; sort (Recently played, A to Z, New). "New" ribbon for 14 days; "Coming soon" cards (data only). Assets and code load only when a game is opened.
+
+---
+
+## 6. PLATFORM FEATURES (rooms, friends and more)
+
+### 6.1 Feature table
+| Feature | Detail |
+|---|---|
+| Profile (local) | Nickname (1 to 14 characters, no `<>`), color (12 swatches), icon (16 icons), saved in localStorage. Stats per game saved locally |
+| Favorites and recent | Star a game; last 3 rooms for quick rejoin |
+| **Rooms** | 4-letter code (no I, O, L), invite link `?room=ABCD`, QR code, **room name**, **private or open**, optional password, **max players (set by the host, within the game's range)**, host, kick, ban, host migration and transfer |
+| **Friends joining** | The host shares the code or link (Copy, Share, WhatsApp, QR, Slack/Teams text). Friends open the link or type the code. Everyone appears live in the lobby |
+| **Open rooms** | A list of open (not private) rooms on this server with room name, game, host, players x/y, status and a lock icon. Updates every 5 s. Private rooms never appear |
+| **Quick Join** | Joins the open room of that game with free seats and the most players waiting; if none, offers Create Room |
+| Lobby | Player list with ready checks and control-style icons, team columns, chat with quick messages, game settings (host edits, others read-only), map preview, invite panel, spectator list |
+| Chat | Text up to 80 characters, 1 per second, 6 quick messages ("Ready!", "Wait for me", "GG", "Nice shot!", "Again?", "Brb"), light filter that replaces a short word list with `***` |
+| Spectators | Up to 20. Join a running match as a viewer; "Take a seat" button appears when a seat is free |
+| Late join | Allowed while the game says it is safe (Tank Arena: first 70% of the match time, not in sudden death); the player enters at the next respawn |
+| Reconnect | A dropped player can rejoin the same seat for 60 s |
+| Rematch | Keeps players and settings; the host may change settings first |
+| Settings | Audio, graphics, controls, accessibility, data (Section 20) |
+| PWA | Install button, offline Local Party and Solo, update prompt |
+| Command palette | `Ctrl/Cmd + K` on desktop (7.9) |
+| Credits | Lists every third-party asset |
+
+### 6.2 Room options (platform form, shown when creating a room and editable in the lobby by the host)
+| Option | Range | Default |
+|---|---|---|
+| Room name | 1 to 24 characters | "<nickname>'s room" |
+| Visibility | Private (code or link only) / Open (listed) | Private |
+| Password | none or 4 to 12 characters | none |
+| Max players | the game's min to max (Tank Arena 2 to 12) | the game's default (Tank Arena 8) |
+| Spectators | On / Off (up to 20) | On |
+| Late join | On / Off | On |
+| Start rule | Host starts / Auto-start when everyone is ready (5 s, cancelable) | Host starts |
+The host cannot set Max players below the number of players already in the room.
+
+### 6.3 Ready and start rules
+- START needs at least the game's minimum players (and, in team modes, at least 1 player or bot on each team).
+- The button shows "Start (5/6 ready)". If not everyone is ready the host sees "Start anyway?": players who are not ready **watch this match** as spectators and return to their seat in the lobby afterwards.
+- Changing any setting clears everyone's Ready. A player who changes team, style or color also clears their own Ready.
+
+### 6.4 Roles in a room
+Host (crown), Player, Spectator, Bot. The host can: edit settings, kick, ban (blocks the player for the life of the room), **transfer host** to another human, close the room. If the host leaves, the earliest-joined human becomes host (toast).
+
+---
+
+## 7. UI DESIGN SYSTEM ("Arena Glass": modern, fast, friendly)
+
+### 7.1 Style
+Dark navy gradient background, frosted-glass cards, bright accents, big rounded shapes, soft glow on hover and focus, playful but clean. Original; no copied branding.
+
+### 7.2 Tokens (CSS variables in `/platform/client/ui/tokens.css`)
+| Token | Value |
+|---|---|
+| `--bg-0` / `--bg-1` | `#0B1020` / `#141B3A` (page gradient top to bottom) |
+| `--surface` | `rgba(255,255,255,0.07)` with `backdrop-filter: blur(14px)` and a 1 px border `rgba(255,255,255,0.14)` |
+| `--surface-2` | `rgba(255,255,255,0.12)` (hover) |
+| `--primary` / `--primary-2` | `#7C5CFF` / `#00B8FF` (gradient buttons) |
+| `--accent` | `#00E5C3` |
+| `--gold` | `#FFC83D` |
+| `--danger` | `#FF4D6D` |
+| `--success` | `#3DDC97` |
+| `--text` / `--text-dim` | `#F4F6FF` / `#A9B2D6` |
+| Team and player colors | Red `#F23A12`, Blue `#3F6FE0`, Yellow `#FDD835`, Green `#43A047`, plus 8 more for large rooms: Orange `#FF8A3D`, Purple `#9B5CFF`, Cyan `#25C7E8`, Pink `#FF5CAA`, Lime `#9BE564`, Teal `#14B8A6`, White `#F4F6FF`, Gray `#8A94B8` (each also has a shape badge) |
+| Radius | 12 (inputs), 20 (cards), 28 (hero), 999 (pills) |
+| Spacing | 4 px grid: 4, 8, 12, 16, 24, 32, 48 |
+| Shadow | `0 8px 30px rgba(0,0,0,0.35)`; glow `0 0 24px color-mix(in srgb, var(--primary) 55%, transparent)` |
+| Fonts | Titles and numbers: Fredoka. Text: Nunito. Google Fonts with a system fallback stack. Sizes: 14 (small), 16 (body, minimum), 20, 28, 40, 64 |
+| Icons | One open-source SVG set (Lucide, MIT), 24 px, credited |
+| Motion | 120 ms (hover), 200 ms (small), 280 ms (screen), easing `cubic-bezier(.2,.8,.2,1)`; respects `prefers-reduced-motion` |
+
+### 7.3 Breakpoints
+| Name | Width | Layout |
+|---|---|---|
+| Phone | under 768 | one column, bottom tab bar, full-width cards, large touch targets |
+| Tablet | 768 to 1199 | two columns, side drawer for chat and settings |
+| Desktop | 1200 and above | three columns in the lobby, hover effects, keyboard shortcuts shown |
+| Big screen | 1920 and above | UI scale 1.25 (TV host) |
+
+### 7.4 Components (UI kit, reused by every game)
+Button (primary gradient, secondary glass, ghost, danger; sizes S 40, M 48, L 56 px; states hover, active, focus ring 3 px `--accent`, disabled, loading), IconButton, Card, GameCard, ModeCard, MapCard, Pill, Tabs, Toggle, Slider, Stepper, Dropdown, Segmented control, Input, CodeInput (4 boxes), PlayerRow (compact 48 px and normal), PlayerSlot (empty "waiting for a friend" slot with an Invite button), TeamColumn, RoomRow (open rooms list), ChatBox, Toast, Modal, BottomSheet (phone), Tooltip, Badge, ProgressBar, Skeleton, QR panel, Scoreboard, Podium, Banner, EmptyState, CommandPalette, ControlCard (with looping demo), StickPreview.
+
+### 7.5 UI rules
+- Minimum text 16 px, minimum touch target 48 x 48 px, at least 8 px between targets.
+- Contrast: text on surfaces at least 4.5:1. Team and player color is never the only signal (labels, icons and shape badges too).
+- Every screen reachable and leavable by keyboard (Tab order, Enter, Esc, arrow keys), mouse and touch. No dead ends: every screen has Back or Home.
+- Loading: skeleton cards, never a blank screen. Errors: a clear sentence plus one button to fix or go back.
+- Confirm dialogs only for leaving a running match, kicking or banning a player, and "Start anyway".
+
+### 7.6 Themes and personalization
+| Setting | Options |
+|---|---|
+| Theme | **Dark** (default), **Light**, **High contrast** |
+| Accent color | Violet `#7C5CFF`, Cyan `#00B8FF`, Mint `#00E5C3`, Orange `#FF8A3D`, Pink `#FF5CAA`, Lime `#9BE564` |
+| Density | Comfortable (default), Compact (also used automatically for 9 or more players in the lobby) |
+| UI scale | 100% to 150% (TV host 125% auto) |
+| Motion | Full, Reduced (follows `prefers-reduced-motion`) |
+Light theme tokens: `--bg-0:#F4F6FF; --bg-1:#E6EAFB; --surface:rgba(255,255,255,0.78); --text:#141B3A; --text-dim:#5A6491`. High contrast: pure black and white surfaces, 3 px borders, no glass blur. Changing theme changes only CSS variables.
+
+### 7.7 Micro-interactions
+| Where | Effect |
+|---|---|
+| Buttons | hover lift 2 px + glow 120 ms; press scale 0.97 with a soft ripple from the touch point 300 ms; 10 ms vibration on touch (setting) |
+| Game cards | desktop: gentle 3D tilt toward the pointer (max 6 degrees) and a light sweep; phone: press scale only |
+| Lobby rows | a friend who joins slides in 300 ms with a soft pop and a "joined" blip; leaving fades out 200 ms |
+| Numbers (scores, counters) | count up 400 ms; pop scale 1.3 to 1 on change; the "6/12 players" counter pops when it changes |
+| Toggles and sliders | spring settle 180 ms; value tooltip while dragging |
+| Loading | skeleton shimmer 1.2 s loop |
+| Ready check | check mark draws in 240 ms with a tiny burst |
+| Page change | fade + slide 24 px, 280 ms; shared-element move of the game banner (View Transitions API where supported, plain fade as fallback) |
+| UI sounds (optional setting) | soft tick on hover (desktop only), pop on click, chime on ready, blip on join |
+All animations use `transform` and `opacity` only, run at 60 FPS, and become instant with Reduced motion.
+
+### 7.8 Navigation patterns
+| Device | Pattern |
+|---|---|
+| Desktop (1200+) | Collapsible left rail (Games, Rooms, Profile, Settings, Help) + top bar with search, Join button, avatar. Breadcrumbs on Game Detail |
+| Tablet | Rail collapses to icons; side drawer for chat and settings |
+| Phone | Bottom tab bar (Games, Join, Profile, Settings) with a floating Join action; bottom sheets for settings and chat; swipe down closes a sheet |
+Always visible: a connection status chip (green good, yellow high ping, red offline) with the ping number.
+
+### 7.9 Command palette and shortcuts (desktop)
+`Ctrl/Cmd + K` opens a centered glass panel. Typing searches games, rooms (type a 4-letter code to join), settings and actions (Create room, Quick Join, Toggle theme, Open controls). Arrow keys move, `Enter` runs, `Esc` closes. `?` in menus lists all shortcuts. Every action also exists as a normal button.
+```
++---------------------------------------+
+| >  search games, rooms, settings...   |
+| Games     Tank Arena          Enter   |
+| Join      KQTR                Enter   |
+| Action    Quick Join          Enter   |
++---------------------------------------+
+```
+
+### 7.10 Touch gestures
+Long-press a game card for a quick menu (Play, Create room, Favorite). Swipe left and right between Lobby tabs. Swipe down to close a bottom sheet. Pull down on the Hub or the Open rooms list to refresh. Edge-swipe back is ignored during a match. Every gesture also has a visible button.
+
+### 7.11 Feedback and states
+- **Toasts:** info, success, warning, error; 4 s; stacked max 3; swipe or tap to dismiss; newest on top. Joins and leaves in a large lobby are grouped ("Ria and 2 others joined").
+- **Inline validation:** codes, room names and nicknames show errors under the field while typing.
+- **Presence in the lobby:** Ready (green check), Not ready (gray), Away (moon, after 30 s idle), Disconnected (red with a 60 s timer), Typing (dots).
+- **Optimistic UI:** buttons react at once, then confirm from the server; failures roll back with a toast.
+- **Empty states:** every empty list has an illustration and a helpful button (for example "No open rooms. Create one!").
+- **Error states:** a plain sentence and one clear action; never a raw error code.
+
+### 7.12 Onboarding
+1. First run: Welcome card (nickname, color, icon), then **Control Setup** (8.13).
+2. Three coach marks on the Hub (Search, Filters, a game card) with Next and Skip.
+3. Game Detail suggests "Try Solo first" once.
+4. The first match shows control hint chips for 10 s that match the player's style, then fade.
+5. A host who creates a room for the first time sees a short tip "Share the code to invite friends".
+6. Tooltips have "Don't show again"; Settings, Data has "Reset tips".
+
+### 7.13 Sharing and invites
+Invite panel in the lobby: big room code, **Copy code**, **Copy link**, **Share** (Web Share API on phones), **WhatsApp** (`https://wa.me/?text=` with the invite message), **QR code** (download as PNG), **Copy for Slack/Teams**. The invite message is: "Join my Tank Arena match! Room code: KQTR. Link: <link>". A big QR for a TV host screen. Each empty player slot has an **Invite** button that opens the same panel.
+
+### 7.14 TV / big screen host mode (light)
+Settings, "Big screen mode": UI scale 125%, bigger room code and QR in the lobby, spectator view by default on the host device. Players join with their phones.
+
+### 7.15 UI performance rules
+Menus load under 2 s on 4G; Hub JS under 300 KB; game card images lazy-load with a blur-up placeholder; animations use only `transform` and `opacity`; CSS `contain` on cards and lists; no layout thrash during a match; the DOM HUD only for text and icons that change rarely (the Phaser canvas draws moving parts). The lobby with 12 players and the open rooms list must scroll at 60 FPS.
+
+---
+
+## 8. SCREENS AND WIREFRAMES
+
+### 8.1 Screen list
+Title, Hub, Game Detail, Create Room, Join Room (with Open rooms), Lobby, Local Party Setup, Solo Setup, Loading and Plan, In-game (HUD, Pause, Controls overlay), Results, Control Setup, Touch Controls Editor, Practice Range, Profile, Settings, How to Play, Credits, Command palette, Share sheet, Offline page, Not found, Error and reconnect modals.
+
+### 8.2 Hub (home)
+```
+DESKTOP (1200+)
++----------------------------------------------------------------------+
+| [logo] OFFICE ARENA        [search... Ctrl+K]  [Join room]  [Avatar] |
++----------------------------------------------------------------------+
+| Filters: [All][Action][Party][Quick][Team][2P][3-4P][5+][Favorites]  |
+|  +------------+  +------------+  +------------+  +------------+     |
+|  |  banner    |  |  banner    |  |  coming    |  |  coming    |     |
+|  | TANK ARENA |  |  (next)    |  |   soon     |  |   soon     |     |
+|  | 2-12 players|  |           |  |            |  |            |     |
+|  | [Play] [*] |  |            |  |            |  |            |     |
+|  +------------+  +------------+  +------------+  +------------+     |
+|  Recent rooms:  [KQTR Tank Arena - Rejoin]  [..]                     |
++----------------------------------------------------------------------+
+PHONE: logo + avatar on top; search; filter chips scroll sideways; 1 card per row; bottom tabs [Games][Join][Profile][Settings]
+```
+Hub card: banner 16:9, name, tagline, player count, average minutes, tags, buttons Play and star. The whole card is clickable.
+
+### 8.3 Game Detail
+```
++----------------------------------------------------------------------+
+| < Back                                                               |
+| [ HERO BANNER  TANK ARENA                                  ]         |
+|   tank battles on one screen   2-12 players  ~3 min [Flag][Team][FFA]|
+|  [ Create Room ] [ Join / Open rooms ] [ Local Party ] [ Solo ]      |
+|  Modes (cards)         Maps (cards with thumbnails)    Controls      |
+|  Flag / Team / FFA     A E G H J                       PC | Touch |Pad|
++----------------------------------------------------------------------+
+```
+Buttons show only for the ways the game supports. **Create Room** opens the Create Room screen. **Join / Open rooms** opens the Join Room screen.
+
+### 8.4 Create Room (NEW)
+```
++--------------------------------------------------+
+| Create a room - Tank Arena                       |
+| Room name  [Dax's room_____________]             |
+| Visibility (o) Private (code only) ( ) Open      |
+| Max players   [-]  8  [+]      (2 to 12)         |
+| Password (optional) [____]                       |
+| [x] Allow spectators   [x] Allow late join       |
+| Start: (o) Host starts  ( ) Auto when all ready  |
+|              [ Cancel ]   [ Create room ]        |
++--------------------------------------------------+
+```
+After Create: the Lobby opens with the host's seat and a **"Waiting for friends" invite panel** at the top (code, link, share buttons, QR).
+
+### 8.5 Join Room (with Open rooms) (NEW)
+```
++--------------------------------------------------+
+| Join a room                                      |
+|  [ K ][ Q ][ T ][ R ]   [Paste from clipboard]   |
+|  Password (only if needed) [____]   [ Join ]     |
+|  Scan the QR with your phone camera              |
+| ------------------------------------------------ |
+| Open rooms                [Quick Join]   [refresh]|
+|  Dax's room   Tank Arena  Dax    5/8   Lobby  [Join]|
+|  Fun match    Tank Arena  Ria   12/12  Playing [Watch]|
+|  Secret       Tank Arena  Sam    3/6   Lobby lock [Join]|
+|  (empty state: "No open rooms. Create one!")     |
++--------------------------------------------------+
+```
+Four large code boxes (80 px), auto-advance, paste support; if the clipboard holds a code or invite link a **Paste from clipboard** button fills it (only on a user tap). A password field only shows if the room needs it. Errors in plain words: "Room not found", "Room is full (12/12). Watch as spectator?", "Match already running. Watch as spectator?", "Wrong password", "Too many tries, wait a minute".
+
+### 8.6 Lobby (up to 12 players)
+```
+DESKTOP (3 columns)
++----------------------------------------------------------------------+
+| Dax's room  KQTR [Copy][Link][Share][QR]  7/12     Tank Arena [Leave]|
++----------------------+-----------------------+-----------------------+
+| PLAYERS / TEAMS      | MATCH SETTINGS        | MAP PREVIEW CARD      |
+| RED 3/6   | BLUE 4/6 | Mode cards            |  [thumbnail]          |
+| Dax* K    | Ria T    | Map cards (+ badges)  |  Name, best for       |
+| Sam G     | Lee K    | Players / Auto scale  |  recommended players  |
+| Bot       | Maya T   | Score, time, ammo ... |  how to win line      |
+| [+Invite] | [Bot]    | Presets  Bots         |                       |
+| [+Invite] | [+Invite]| (read-only if not host)| [Test controls]      |
+| [Join Red][Join Blue]|                       |                       |
+| Spectators (2) v     |                       |                       |
+| CHAT                 |                       |                       |
+| [quick msgs] [type..]|                       |                       |
++----------------------+-----------------------+-----------------------+
+|     [ READY ]                     [ Start (5/7 ready) - host ]       |
++----------------------------------------------------------------------+
+FREE FOR ALL: one list in 2 columns of 6 rows. PHONE: tabs [Players][Settings][Map][Chat]; READY and START in a sticky bottom bar; rows are compact (48 px)
+```
+Lobby rules: each row shows color dot with shape badge, icon, nickname, host crown, ready check, ping, **control-style icon**, and (host only) a menu with **Kick, Ban, Make host, Move to other team**. Empty slots show a dashed "Waiting for a friend" slot with an **Invite** button. The header shows the **player counter (7/12)** and room name. Team columns appear only for team modes; **Auto-balance** and **Shuffle** (host); a full team shows "Team full (6/6)" and its Join button is disabled. New joiners go to the smaller team. START rules follow Section 6.3. A summary line under the settings reads like "Flag, Steel Yard, 5 vs 5, 1 hit". "Test controls" opens the practice range. Any setting change clears Ready.
+
+### 8.7 Local Party Setup
+Shows the stage with 4 corner buttons. Each player taps their corner (or presses their key or gamepad button) to **join**; a tank icon appears in their color. Choose mode, map and bots, then **Start** (at least 2 players; bots fill). "Test controls" lets everyone try their button. A tip about system gestures with 4 fingers appears. A hint says "More than 4 friends? Create an online room."
+
+### 8.8 Solo Setup
+Mode cards, map cards, number of bots (1 to 11), difficulty, preset, Start.
+
+### 8.9 Loading and Plan screen (5 s)
+Map name, mode goal ("Capture the enemy flag!"), a 3-line control reminder for the player's device and style, team color, a tip, the list of players. Progress bar for asset loading. The server waits until every player is loaded (max 15 s, then starts without slow loaders, who join as late joiners).
+
+### 8.10 In-game
+The game scene fills the window (letterboxed). Platform overlay: Pause button (top right), mute, ping/FPS (optional), connection warning. **Pause menu:** Resume, **Controls**, Settings, How to Play, Leave match (confirm). Local Party and Solo pause the game; online never pauses.
+
+### 8.11 Results
+```
++----------------------------------------------------------------------+
+|                    [ WINNER: BLUE TEAM ]  (confetti)                 |
+|        Red 3   -   Blue 5          time 3:02                         |
+|  Scoreboard (scrolls): rank | player | team | points | deaths | accuracy |
+|  Awards: Sharpshooter, Flag Hero, Survivor, MVP                      |
+|  [Rematch (9/12 voted)] [Back to Lobby] [Leave]                      |
++----------------------------------------------------------------------+
+```
+Rematch votes show live. Players who leave are removed from the lobby; the rest keep their seats and settings. Spectators can vote to take a seat if one is free. Columns and awards come from the game's `results` schema.
+
+### 8.12 Profile, Settings, How to Play, Credits
+- **Profile:** nickname, color, icon, per-game stats, last 10 matches, "Reset data".
+- **Settings** (tabs): Audio, Graphics, Controls, Accessibility, Data (Section 20).
+- **How to Play:** per game, from `howTo`: goal, **how to invite friends**, controls for the player's device and style, mode diagrams, power-up legend, 5 tips.
+- **Credits:** every third-party asset (name, author, license, link).
+
+### 8.13 Control Setup screen
+```
+PC
++----------------------------------------------------------------+
+| Choose your controls                     Device: [PC][Touch][Pad]|
+| +----------------+ +------------------+ +-----------------+      |
+| | ARCADE         | | STANDARD         | | MOUSE STEER     |      |
+| | Original style | | Best control     | |                 |      |
+| | [looping demo] | | [looping demo]   | | [looping demo]  |      |
+| | Hold Space:    | | W/S move         | | Mouse turns     |      |
+| |  drive         | | A/D turn         | |  the tank       |      |
+| | Click: fire    | | Space/Click:fire | | Right-click:    |      |
+| |                | |                  | |  drive          |      |
+| | [Use] [Try it] | | [Use] [Try it]   | | [Use] [Try it]  |      |
+| +----------------+ +------------------+ +-----------------+      |
+| Aim assist [Off v]   Hold to rapid fire [on]   [Remap keys]    |
++----------------------------------------------------------------+
+PHONE: the three cards scroll sideways; "Try it" opens the practice range
+```
+The **practice range** (20 s) has 5 targets, a brick wall, a power box and an ammo rack so the player feels fire, ammo and movement with the chosen style.
+
+### 8.14 Touch Controls Editor
+```
++-------------------------------------------------------------+
+| Edit touch controls     [Left-handed] [Reset]        [Done]  |
+|    ( stick )  drag to move                     ( FIRE )      |
+| Stick size [----o--]  Fire size [---o---]  Opacity [---o---] |
+| Dead zone [--o--]   Stick: (o) Floating ( ) Fixed            |
+| Hold to rapid fire [on]  Haptics [on]  Aim assist [Light v]   |
++-------------------------------------------------------------+
+```
+Drag the stick area and the FIRE button (snaps to an 8 px grid, stays inside the safe area). Changes apply live. Saved per device.
+
+### 8.15 Controls overlay
+The `?` key (or a small `?` button on touch) opens the Controls overlay without pausing an online match; the pause menu opens the same overlay.
+
+### 8.16 Share sheet
+On phones a bottom sheet with large buttons: Share, WhatsApp, Copy link, QR. On desktop the invite panel in the lobby (7.13).
+
+### 8.17 System screens and modals
+Offline page ("You are offline. Local Party and Solo still work."), Not found, Reconnecting modal ("Connection lost. Reconnecting... 45 s", Retry, Back to menu), Kicked ("You were removed by the host"), Banned ("You cannot rejoin this room"), Room closed ("The host closed the room"), Update toast ("New version. Tap to update.").
+
+---
+
+## 9. USER FLOWS (end to end)
+
+**9.1 First visit:** Title (tap or key) -> Welcome card (nickname, color, icon; skippable, default "Player123") -> Control Setup (device detected, pick a style, try it) -> Hub with 3 coach marks -> Game Detail -> "Try Solo first?" offered once.
+
+**9.2 Host: create a room and invite friends**
+1. Hub -> Tank Arena -> **Create Room** -> set room name, visibility, max players, password -> Create.
+2. The Lobby opens. The host sees the **invite panel**: room code (for example `KQTR`), link, QR, Share, WhatsApp.
+3. The host sends the code or link to friends (WhatsApp group, Slack, Teams, or says it aloud).
+4. Friends appear in the lobby live (row slides in, "joined" blip). Empty slots show "Waiting for a friend".
+5. Players pick team and press **Ready**. The host picks mode, map and settings (or keeps defaults; Auto scaling fits points and time to the player count).
+6. The host presses **Start (N/N ready)** (or Auto-start). Loading and Plan (5 s) -> countdown 3-2-1 -> match.
+7. Results -> **Rematch** (votes) or Back to Lobby or Leave.
+
+**9.3 Friend: join**
+- **By link or QR:** open `?room=ABCD` -> the code is pre-filled -> (password if needed) -> Lobby -> pick team -> Ready.
+- **By code:** Hub -> Join Room -> type the 4 letters (or Paste from clipboard) -> Join.
+- **From Open rooms:** Hub -> Join Room -> Open rooms -> Join. Or press **Quick Join**.
+- **If the room is full:** "Room is full (12/12). Watch as spectator?" -> spectate; when a seat frees, a **Take a seat** button appears (first tap wins).
+- **If a match is running:** join as spectator; press **Join match** to enter at the next respawn (while late join is allowed).
+
+**9.4 Late join:** spectator presses **Join match** -> placed in the smaller team (team modes) or a free FFA seat -> spawns at the next respawn with a "Joined late" tag and a 1.5 s shield. Not allowed in sudden death or after 70% of the time.
+
+**9.5 Local Party:** Hub -> Game Detail -> Local Party -> players tap their corner to join (up to 4) -> choose mode, map, bots -> Start -> match -> Results -> Rematch.
+
+**9.6 Solo:** Hub -> Game Detail -> Solo vs Bots -> mode, map, bots (1 to 11), difficulty -> Start -> match -> Results.
+
+**9.7 Leaving and returning:** Leave match: confirm, then back to Game Detail. Host leaves: the earliest-joined human becomes host (toast); the host can also **Make host** to another player before leaving. Disconnect: seat held 60 s; rejoin from Recent rooms or the same link; the tank is parked and invulnerable meanwhile. Browser back goes to the previous screen; during a match it asks for confirmation. If the host **closes the room**, everyone sees "The host closed the room" and goes to the Hub.
+
+**9.8 Install as an app:** after the second visit show an Install button (where the browser allows) and a Settings entry. On iPhone show the tip "Share, then Add to Home Screen".
+
+**9.9 Add a new game later:** the developer follows Section 5.3. Players see the new card with a "New" ribbon.
+
+---
+
+## 10. INPUT AND CONTROLS
+
+### 10.1 Principles
+1. **Instant response:** act on `pointerdown` and `keydown`, never on `click`. Target under 50 ms from input to the tank reacting.
+2. **Learn in 10 seconds:** each style fits on one card with an animated demo.
+3. **No misfires:** HUD buttons never fire the cannon; touches never become browser gestures.
+4. **Comfortable thumbs:** controls can be moved, resized and mirrored.
+5. **Every player chooses:** control style is per player and saved on the device.
+6. **One game logic:** all styles produce the same input for the simulation (10.7), so rules and balance stay the same.
+
+### 10.2 Platform input rules
+- One InputManager. It turns raw events into logical actions (5.2). Use Pointer Events with pointer capture. Clear all inputs on window blur, tab hidden or orientation change.
+- Prevent default for game keys, wheel and context menu **only while a match is running**. Menus keep normal browser behavior (text selection in chat, scrolling lists).
+- Use `KeyboardEvent.code` (physical keys) so WASD works on every layout; show key labels with `navigator.keyboard.getLayoutMap()` when available.
+- Key remapping in Settings with conflict detection; reserved: `Esc` and `F11`. A **Key test** screen shows which keys register (helps with keyboard ghosting).
+- CSS on the game container: `touch-action: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none;`.
+
+### 10.3 The three control styles
+| Style | Idea | Best for |
+|---|---|---|
+| **ARCADE** (original feel) | The tank drives forward while you hold the drive input. Firing makes the tank recoil and turn | Local Party (one button), beginners, fans of the reference game |
+| **STANDARD** (tank controls) | Forward, reverse, rotate left and right, fire | PC players who want control; **recommended on PC** |
+| **STEER** (point and go) | You point where the tank should face; it turns toward that and drives | Phones (Twin-Thumb), gamepad sticks, mouse players |
+
+### 10.4 PC: keyboard and mouse
+**A. Arcade (Space + Click)** (pre-selected in the first-run picker)
+| Input | Action |
+|---|---|
+| **Hold Space** | Tank drives forward at once (no delay) |
+| **Left mouse click** (anywhere on the stage) | Fire one shell + recoil turn (shot 1 right, shot 2 left, shot 3 right...) |
+| **A / D** or **Left / Right arrows** | Turn assist (hull turns 160 deg/s). Setting "Turn assist": ON on PC, OFF in Local Party |
+| Right click, wheel | Ignored in a match |
+**B. Standard (WASD)** (badge: "Best control")
+| Input | Action |
+|---|---|
+| **W** or **Up** | Drive forward (210 px/s) |
+| **S** or **Down** | Reverse (120 px/s) |
+| **A / D** or **Left / Right** | Rotate the hull (220 deg/s) |
+| **Space** or **Left click** | Fire (hold = keeps firing at the cooldown while ammo lasts; setting "Hold to rapid fire") |
+| Recoil turn | OFF in this style |
+**C. Mouse Steer**
+| Input | Action |
+|---|---|
+| **Move the mouse** | The tank turns toward the cursor (220 deg/s) |
+| **Hold Right click** or **W** | Drive forward; **S** reverses |
+| **Left click** or **Space** | Fire |
+| Cursor | A small ring at the cursor shows the target heading; a thin line shows the barrel direction |
+**D. Local Party on one PC (one key per player, Arcade only):** P1 `Q`, P2 `P`, P3 `Z`, P4 `M`. **Hold = drive, quick tap = fire + recoil turn** (tap time 0.2 s, hold delay 0.1 s). Remappable.
+
+**PC shortcuts**
+| Key | Action |
+|---|---|
+| `Esc` | Pause menu |
+| `Tab` (hold) | Scoreboard overlay |
+| `F` or `F11` | Fullscreen (`F` is off in Local Party because of key use) |
+| `Ctrl + M` | Mute |
+| `?` (Shift + /) | Controls overlay (the player's current style) |
+| `Enter` | Open chat (lobby only) |
+| `Ctrl/Cmd + K` | Command palette (menus only) |
+**Mouse rules**
+- The cursor stays visible and hides after 2 s without movement during a match; it returns on movement.
+- A click fires only when the click target is the game canvas. Clicks on HUD buttons, the pause menu or chat never fire.
+- Right-click menu and text selection are blocked **only during a match**.
+- When the mouse leaves the window or the window loses focus: release all inputs, the tank stops; the aim ring stays at the last point.
+- Before a match starts, blur the focused element so Space can never press a focused button.
+
+### 10.5 Phone and tablet: touch
+All touch layouts use **landscape**. Controls stay at least 24 px from the screen edges (avoids system swipe gestures) and respect safe-area insets.
+**A. Twin-Thumb** (recommended on phones, STEER style)
+```
++-------------------------------------------------------------+
+| [Red 0]        1:42        [Blue 1]              [II] [mute] |
+| ammo o o o o o                                               |
+|    (  floating  )                                [  FIRE  ]  |
+|    (   stick    )                                           |
++-------------------------------------------------------------+
+```
+| Part | Rule |
+|---|---|
+| Stick zone | The left 45% of the screen. The stick appears **where the first touch lands** (floating, default) or sits at a fixed spot (setting) |
+| Stick size | base 140 px diameter (setting 100 to 180), knob 64 px, max drag 60 px, dead zone 12% |
+| Behavior | The tank turns toward the stick direction (220 deg/s) and drives at speed = stick strength. When the stick angle is more than 60 degrees from the hull, speed is 60% so the tank pivots first. Release = stops |
+| FIRE button | Bottom-right, 110 px diameter (setting 80 to 150), hit area 16 px bigger than drawn. **Tap** = one shell. **Hold** = keeps firing at the cooldown while ammo lasts (setting) |
+| Opacity | 45% idle, 85% pressed (setting 20% to 100%) |
+| Haptics | 10 ms vibration per shot, 25 ms when hit (setting, where supported) |
+| Left-handed | Swap sides (mirror layout) |
+| Aim assist | Light (default on touch): when an enemy is within 10 degrees of the barrel and 500 px away, the hull nudges up to 4 degrees toward it per shot. Never fires by itself. Setting Off / Light |
+| Auto-fire (accessibility) | Optional: fires when an enemy is within 5 degrees in front. Default OFF |
+**B. Tank Pad** (STANDARD style with buttons): left thumb has **left** and **right** rotate buttons; right thumb has **drive** (hold) and **FIRE**. Button size 100 px. Reverse is not on this pad.
+**C. One-Thumb Arcade** (ARCADE style): touch and **hold anywhere** to drive (a faint ring shows at the touch point); a **quick tap** (under 0.2 s) fires and recoil-turns. Good for one-handed play.
+**D. Local Party on one screen:** each player touches their **corner button** (120 px or larger on screen). Hold = drive, quick tap = fire + recoil turn. Up to 4 fingers; each finger is captured by its button.
+**Touch behaviors**
+- Pointer Events with pointer capture; each pointer is independent. Online and Solo use 2 pointers (stick + fire); extra pointers are ignored. Local Party uses up to 4.
+- A finger that starts on the stick stays the stick even if it slides over FIRE (and the other way round).
+- Touches on the pause or mute buttons never reach the game.
+- One-time tip: "Swiping from the screen edge may leave the game."
+
+### 10.6 Gamepad
+| Input | Action |
+|---|---|
+| Left stick | STEER (same as Twin-Thumb; dead zone 0.2; calibration slider in Settings) |
+| `A` or `RT` | Fire (hold = rapid fire) |
+| D-pad | Standard-style drive and rotate (optional) |
+| `Start` | Pause |
+| Local Party | one pad per player; any face button = Arcade hold/tap |
+Hot-plug works (toast "Gamepad 2 connected").
+
+### 10.7 Canonical input for the simulation (all styles produce this)
+```ts
+type TankInput = {
+  seq: number;
+  throttle: number;        // -1..1  (ARCADE: 0 or 1; STANDARD: -1..1; STEER: 0..1)
+  turn: number;            // -1..1  (ARCADE turn assist and STANDARD; 0 for STEER)
+  heading: number | null;  // degrees 0..360 for STEER; null otherwise
+  fire: number;            // counter, +1 per shot request
+};
+```
+The client sends this at 30 Hz (or on change; compact array form `[seq,throttle,turn,heading,fire]`). The control **style** is sent once with the player profile (`setProfile`) and again in `matchStart`; the server validates it.
+
+### 10.8 How each style moves the tank (shared sim, `config.ts`)
+| Rule | ARCADE | STANDARD | STEER |
+|---|---|---|---|
+| Forward speed | 210 px/s | 210 px/s | 210 px/s x strength |
+| Reverse | none | 120 px/s | none (it turns instead) |
+| Turn | recoil 30 degrees per shot + optional assist 160 deg/s | 220 deg/s | 220 deg/s toward `heading` |
+| Acceleration | 0.1 s to full speed, 0.1 s to stop | same | same |
+| Fire | tap (one-button) or separate fire input | fire input | fire input |
+| Recoil turn on fire | ON (host option) | OFF | OFF |
+The server caps speed and turn rate per style so a modified client cannot move faster, and ignores `heading` for styles that do not use it.
+
+### 10.9 Defaults, first-run picker and fairness
+- **Defaults:** PC = **ARCADE (Space + Click)**, Touch = **Twin-Thumb**, Gamepad = STEER, Local Party = Arcade one-button (fixed). In `config.ts`: `DEFAULT_STYLE = { pc: 'ARCADE', touch: 'STEER_TWIN_THUMB', pad: 'STEER' }` (change `pc` to `'STANDARD'` to make Standard the default).
+- On first launch (and any time from Settings) the **Control Setup** screen (8.13) shows 3 cards for the detected device. "Try it" opens a 20 s practice range. The choice is saved in `oa.settings.controls.<device>`.
+- Host options: **Control styles allowed** (All or Standard only) and **Aim assist allowed** (On or Off). Each lobby player row shows a style icon. A player can change style in the pause menu; online it applies from the next respawn.
+
+### 10.10 Why these controls (recommendation)
+1. Two thumbs (stick + FIRE) give phone players a precise tank; steering by recoil alone costs ammo and feels random.
+2. WASD + Space/Click is what PC players already know, so a colleague plays with no teaching.
+3. Mouse Steer makes aiming very fast for mouse users.
+4. The Arcade style keeps the original one-button feel and is the only style that works for 4 people on one screen.
+5. One shared input format keeps rules and anti-cheat simple, and new games reuse the same InputManager.
+
+---
+
+## 11. NETWORKING AND ROOMS
+
+**Server:** one Node.js process serves the built client AND the WebSocket on the same port (`process.env.PORT`, path `/ws`, health `/healthz`, listen on `0.0.0.0`). Rooms live in memory. Each room runs inside try/catch so one crash never stops other rooms.
+
+### 11.1 Rooms
+- 4-letter code from the allowed letters (no I, O, L), generated until unique and not on a small blocklist of unwanted words. Stores `gameId`, room name, visibility, password hash, max players, options, host.
+- States `LOBBY -> LOADING -> COUNTDOWN -> PLAYING -> RESULTS -> LOBBY`.
+- Deleted 60 s after the last human leaves, or at once when the host closes it.
+- Host migration to the earliest-joined human; **transfer host** on request; kick blocks rejoin for 60 s; **ban** blocks for the life of the room.
+- Reconnect within 60 s with a `playerToken` in sessionStorage; ping every 2 s; silent connections dropped after 10 s.
+- **Open rooms list:** the server keeps a list of open rooms `{code, name, gameId, hostName, players, max, status, hasPassword}`. It is sent on request and pushed every 5 s to clients on the Join screen. Private rooms are never included.
+- **Quick Join:** the server picks an open room of the game with a free seat, status LOBBY, no password, the most players first.
+
+### 11.2 Messages (generic, `/platform/shared/protocol.ts`)
+- Client to server: `listGames, listRooms, quickJoin{gameId}, createRoom{gameId,options}, joinRoom{code,password,asSpectator}, leaveRoom, closeRoom, setRoomOptions, setProfile{nickname,color,icon,controlStyle}, setTeam, shuffleTeams, setReady, hostSettings, startMatch{force}, takeSeat, joinMatch, kick{id}, ban{id}, transferHost{id}, input{t,payload}, chat, rematch, vote, ping`.
+- Server to client: `games, rooms, roomJoined, roomUpdate, loading, countdown, matchStart{mapId,seed,settings,styles}, snapshot{t,payload}, event{t,payload}, matchEnd, error, pong`.
+The platform never reads `payload`; the game defines it. For Tank Arena the input payload is `TankInput` (10.7).
+
+### 11.3 Real-time loop (games with `tickRate` > 0)
+- Server simulation at the game's tick (Tank Arena 30 Hz), snapshots at 20 Hz, reliable events at once.
+- Client-side prediction for the player's own object, 100 ms interpolation for the rest (extrapolate at most 200 ms). Hits, damage and scores come only from the server. Optional lag compensation up to 150 ms.
+- **Compact snapshots for 12 players:** a snapshot holds only tanks as arrays of rounded integers `[id, x, y, angle, flags, ammo, power]`, plus flags, power boxes, scores and the timer. **Shells are not in snapshots**: clients simulate them from `shot` events (spawn position, angle, tick). Brick damage, destruction, pickups and respawns are events. Target: under 15 KB/s per client at 12 players, hard warning at 40 KB/s. Optional binary encoding later.
+
+### 11.4 Capacity and limits (`/platform/shared/config.ts`)
+| Limit | Value |
+|---|---|
+| Players per room | the game's max (Tank Arena 12) |
+| Spectators per room | 20 |
+| Rooms per server | 50 |
+| Connections per server | 600 |
+| Connections per IP | 40 (offices share one IP) |
+| Create room | 5 per minute per socket |
+| Join attempts | 10 per minute per socket (wrong password counts) |
+| Messages | 120 per second per socket (close at 200); one message at most 4 KB |
+Target on one 1 vCPU instance: 10 rooms with 12 players each, server tick time under 10 ms, CPU under 70% (measured by the load test).
+
+### 11.5 Validation and safety
+Clamp every value to its range; nickname 1 to 14 characters without `<` `>`; room name 1 to 24 characters, same filtering; chat 80 characters and 1 per second; unknown message types ignored; no personal data stored; passwords hashed and compared on the server only; control style must be one the game declares and the host allows; host-only messages (`hostSettings, startMatch, kick, ban, transferHost, closeRoom, setRoomOptions`) are rejected from others.
+
+### 11.6 Debug and tools
+`?lag=150&loss=3` (simulate a bad network), `?debug=1` (overlay with ping, tick, snapshot rate and size, prediction error, input latency, entity count, FPS, collision shapes). `npm run loadtest -- --rooms 5 --players 12` runs `/tools/loadtest.ts` (headless bot clients that join, ready up, play and leave; prints tick time, CPU, bandwidth per client and any errors).
+
+### 11.7 Plan B
+Only if a WebSocket server cannot run: host-authoritative peer-to-peer (PeerJS/WebRTC) with the host browser running the shared simulation. Tell the user it is less reliable behind strict office firewalls and is limited to about 6 players.
+
+---
+
+## 12. GAME 1: TANK ARENA (rules)
+
+### 12.1 Summary
+2D top-down tank battles on one screen. Matches last 2 to 4 minutes. Modes: **Flag**, **Team Fight**, **Free For All**. **2 to 12 tanks online** (humans and bots), teams up to **6v6**; Local Party up to 4. Spectators up to 20. The simulation is a fixed step 1/30 s in `/games/tank-arena/shared/sim.ts`; the same code runs in the server, in the browser prediction, in Local Party and in Solo.
+
+### 12.2 Controls and movement
+- Movement follows Section 10.8 for the player's control style. All numbers live in `config.ts`.
+- **One-button inputs** (Local Party corner button, one-key mode, touch One-Thumb): the platform decides tap vs hold on the client. Holding longer than the **hold delay (0.1 s)** starts driving; releasing within the **tap time (0.2 s, setting 0.12 to 0.30)** counts as a tap (fire counter +1). A quick tap moves the tank at most 20 px.
+- **Separate fire inputs** (Space hold + click, WASD, Mouse Steer, Twin-Thumb, Tank Pad, gamepad): no tap detection and no hold delay; the tank reacts at once.
+- **Recoil turn** (ARCADE only, host option, default ON): 30 degrees over 0.12 s per shot, alternating right then left; the counter resets at respawn. A recoil turn is cut short if it would push the hull into a wall.
+- **Ammo and cooldown:** a shot needs ammo of 1 or more and the 0.2 s cooldown to be over; otherwise a dry click and **no recoil turn**.
+- **Hold to rapid fire:** when on, holding fire repeats shots at the cooldown until ammo is 0.
+- The server fires exactly once per increase of `fire`, validates ammo, cooldown, speed and turn rate, and ignores impossible input.
+
+### 12.3 Tank and combat numbers (`config.ts`)
+| Stat | Value |
+|---|---|
+| Stage | 1792 x 828 logical px (letterboxed on other ratios) |
+| Tank | sprite about 66 x 52 px, collision circle radius 24 px |
+| Speed | 210 px/s forward (reverse 120 px/s in Standard and Mouse Steer); slides along walls |
+| Health | 1 hit destroys (host option 1 or 2 hits) |
+| Shell | speed 620 px/s, radius 5 px, lifetime 1.6 s, swept collision (never passes through thin walls); explodes on walls (ricochets 0, host option 0 to 2) |
+| Ammo | 5 shells; 1 returns every 1.5 s (host 0.8 to 3 s); the rack shows used shells dark |
+| Fire cooldown | 0.2 s |
+| Respawn | 3 s in the team's respawn zone (spawn pool, 12.9); X-barriers at the bay mouth open at 0 (bays are used when the map has them); spawn shield 1.5 s (ends when you fire) |
+| Tank vs tank | pushed apart equally, no damage, small spark |
+| Friendly fire | OFF in team modes, ON in Free For All |
+
+### 12.4 World objects
+| Object | Rule |
+|---|---|
+| **Pit wall** (dark block, light rim) | Solid; shells explode on it |
+| **Brick** (44 x 28, rotated 90 degrees in vertical runs) | Breaks in 2 hits (first hit cracks it), 4 flying pieces, small crater. Host option: bricks breakable On/Off |
+| **Striped steel barrier** (yellow-black) | Never breaks |
+| **Crate** (about 44 x 44) | Breaks in 1 hit; 40% chance to leave a power item |
+| **Bush** | Decoration only (no collision, no hiding) |
+| **Power box** (frosted square with a slash, 56 x 56) | A tank touches it: the box hides and the tank gets a **random power** for a limited time; the box returns after 12 s |
+| **Flag and pad** | Section 12.6 |
+| **Team gate** (red or blue bar beside the Steel Yard center blocks) | Blocks enemy tanks, lets own team pass (map option, default OFF until playtested) |
+| **Turret** (River Turrets map, later) | Neutral automatic cannon: fires at the nearest tank within 400 px every 2 s (map option, later) |
+
+### 12.5 Powers (random, limited time)
+| Power | Effect | Time |
+|---|---|---|
+| **Speed** | speed x1.5 (blue flame, speed lines) | 6 s |
+| **Shield** | absorbs 1 hit, blue ring that pops | 8 s |
+| **Unlimited Fire** | no ammo use, cooldown 0.1 s, glowing barrel | 6 s |
+A new power replaces the old one. A timer ring shows above the tank and the power icon shows in the HUD. The host can switch each power on or off. Later powers: Triple Shot, Big Shell, Mine, Repair.
+
+### 12.6 Modes
+**1. FLAG (default)**
+- Each team has **one flag** standing beside its **pad**. The pad shows a faint icon of the **enemy flag** (where you deliver it). Teams of 1 to 6 players.
+- Touch the **enemy flag** with your tank to carry it (the flag shows on the tank and a cyan ring pulses). Only one tank carries a flag at a time; if two touch it in the same tick, the closer tank wins. Carrier speed 90% (host 70 to 100%). The carrier can still shoot.
+- **Capture:** drive onto **your own pad** while carrying. Captures needed to win: **Auto** (1 for up to 4 players, 2 for 5 to 8, 3 for 9 to 12; host 1 to 5).
+- Carrier destroyed: the flag **drops** there (pushed out of walls). It returns to its spot after 10 s, or instantly when a tank of its own team touches it.
+- "Own flag must be home to capture" = OFF by default (casual); the host can turn it ON. On maps where the flag stands on the pad (Map J) it is always ON.
+- At time up: more captures wins; a tie plays 30 s sudden death (first capture wins), then a draw.
+- Start: tanks begin in their team's spawn pool near their flag. After a kill, they respawn in the pool.
+**2. TEAM FIGHT** (no flags)
+- Each destroyed enemy tank = 1 point. Points to win: **Auto** (3 for up to 4 players, 5 for 5 to 8, 8 for 9 to 12; host 3 to 30) or the higher score at time up. Tie: sudden death (next point wins). Teams from 1v1 up to **6v6**.
+**3. FREE FOR ALL** (up to 12)
+- Every tank alone with its own color and shape badge. 1 point per destroyed enemy; points to win **Auto** as above, or the most points at time up. Best with 3 to 8 players; up to 12 allowed.
+**Solo play:** any mode with 1 to 11 bots. Online rooms can also be filled with bots (13.3).
+
+### 12.7 Auto scaling (players = humans + bots)
+| Players | Time limit | Points to win | Captures to win |
+|---|---|---|---|
+| 2 to 4 | 2:00 | 3 | 1 |
+| 5 to 8 | 3:00 | 5 | 2 |
+| 9 to 12 | 4:00 | 8 | 3 |
+"Auto" recalculates in the lobby when players join or leave. A value the host sets by hand is kept and marked "Manual".
+
+### 12.8 Match flow, scoring and results
+Plan screen (5 s) -> countdown 3-2-1 and a big "START!" banner -> play -> win condition or time up -> freeze 1.5 s with a WINNER banner and confetti -> Results. Score boxes and timer update live. At 30 s left the timer pulses red; at time up a "TIME!" banner shows.
+Per player: points, shots fired, hits, accuracy, flags picked up, captures, returns, deaths, powers collected. Awards: Sharpshooter (best accuracy, at least 5 shots), Flag Hero (most captures), Defender (most flag returns), Survivor (fewest deaths), Collector (most powers). **MVP** = points + 3 x captures + returns. Scoreboard order: points (high first), then deaths (low first), then accuracy.
+
+### 12.9 Spawn pools (many players)
+Each map defines **spawn areas** (14.1 to 14.6). At map load the shared code builds, deterministically from the match seed, a **spawn pool** for each team and for Free For All:
+1. Candidate points on a 32 px grid inside the spawn area, at least **40 px from any wall, brick or barrier** and **70 px from a flag or pad**.
+2. Pick points by **farthest-point sampling**, starting from the map's original start spawns, with a minimum spacing of **64 px** (FFA: 160 px). Create **6 points per team** (12 for Free For All). If a map cannot give enough points, relax spacing to 48 px; if still short, use the free point that is farthest from others.
+3. Blue's pool is the **mirror** of Red's (horizontal mirror, or point mirror on map J).
+**Choosing a spawn:** among the team's pool, take the free point (no tank within 100 px) that is farthest from the nearest enemy; ties go to the lower index. If every point is blocked, wait up to 1 s, then use the next best. Never the same point twice in a row.
+
+### 12.10 Crowd rules (UI and fairness)
+- **Name tags** above every tank (nickname, small font, team-colored outline). Your own tank has a thin ring; at spawn a "YOU" arrow shows for 3 s.
+- **Kill feed** under the score bar (online): up to 4 lines, each for 3 s: "Dax > Ria" with weapon icon; older lines fade.
+- **Scoreboard** (Tab or a button on touch, and at Results): scrolls for 12 players.
+- With more than 8 players the name tags of far enemies fade to 40% opacity (Low quality: hidden beyond 500 px).
+- Each map shows its **recommended players** (14.1). More players are allowed ("Crowded but fun").
+- **AFK:** a player with no input for 20 s in a match gets an "AFK" tag; after 45 s they become a spectator (the host can turn this off); they keep their seat in the lobby.
+
+### 12.11 `config.ts` main keys (give this to the AI; defaults shown)
+```ts
+export const TANK = {
+  stage: { w: 1792, h: 828 }, radius: 24, speed: 210, reverseSpeed: 120,
+  accelSec: 0.1, brakeSec: 0.1, hits: 1,
+  turnRate: { standard: 220, steer: 220, arcadeAssist: 160 },
+  steerPivotAngle: 60, steerPivotSpeedScale: 0.6,
+  recoil: { enabled: true, angleDeg: 30, durationSec: 0.12 },
+  tapTimeSec: 0.2, holdDelaySec: 0.1,
+  shell: { speed: 620, radius: 5, lifeSec: 1.6, ricochets: 0 },
+  ammo: { max: 5, returnSec: 1.5, cooldownSec: 0.2 },
+  respawnSec: 3, spawnShieldSec: 1.5,
+  carrierSpeedPct: 90, flagReturnSec: 10, powerBoxReturnSec: 12,
+  powers: { speed: { mult: 1.5, sec: 6 }, shield: { sec: 8 }, unlimited: { sec: 6, cooldownSec: 0.1 } },
+  players: { min: 2, max: 12, defaultMax: 8, perTeamMax: 6, localMax: 4, spectatorsMax: 20 },
+  autoScale: [
+    { upTo: 4,  timeSec: 120, points: 3, captures: 1 },
+    { upTo: 8,  timeSec: 180, points: 5, captures: 2 },
+    { upTo: 12, timeSec: 240, points: 8, captures: 3 },
+  ],
+  suddenDeathSec: 30,
+  spawnPool: { gridPx: 32, wallClearPx: 40, flagClearPx: 70, teamSpacingPx: 64, ffaSpacingPx: 160, perTeam: 6, ffa: 12, tankClearPx: 100 },
+  lateJoinUntilPct: 70, afk: { warnSec: 20, specSec: 45 },
+  aimAssist: { level: 'light', coneDeg: 10, rangePx: 500, nudgeDeg: 4 },
+  touch: { stickPx: 140, stickMax: 60, deadZone: 0.12, firePx: 110, hitPadPx: 16, idleOpacity: 0.45, pressOpacity: 0.85 },
+  defaultStyle: { pc: 'ARCADE', touch: 'STEER_TWIN_THUMB', pad: 'STEER' },
+};
+```
+
+---
+
+## 13. TANK ARENA SETTINGS (match manager)
+The server clamps every value; humans + bots never exceed the room's Max players (2 to 12). Settings change only in the lobby.
+
+### 13.1 Settings table
+| Setting | Range | Default |
+|---|---|---|
+| Mode | Flag / Team Fight / Free For All | Flag |
+| Map | 5 maps + Random | best map for the mode and player count |
+| Max players | 2 to 12 | 8 |
+| Team sizes | 1v1 up to 6v6 (follows who joined; uneven teams allowed with a warning) | even |
+| Bots | 0 to 10 | 0 (Solo: 1 to 11) |
+| Fill with bots | Off / Even teams / To max players | Even teams |
+| Bot difficulty | Easy / Medium / Hard / Mixed | Medium |
+| Time limit | Auto, or 1:00 to 10:00 | Auto |
+| Points to win (Team Fight, FFA) | Auto, or 3 to 30 | Auto |
+| Captures to win (Flag) | Auto, or 1 to 5 | Auto |
+| Own flag must be home (Flag) | On / Off | Off |
+| Flag return time | 5 to 20 s | 10 s |
+| Carrier speed | 70% to 100% | 90% |
+| Hits to destroy | 1 or 2 | 1 |
+| Ammo | 3 to 8 | 5 |
+| Ammo return time | 0.8 to 3.0 s | 1.5 s |
+| Tank speed | 80% to 130% | 100% |
+| Shell ricochets | 0 to 2 | 0 |
+| Bricks breakable | On / Off | On |
+| Power boxes | Off / Few / Normal / Many | Normal |
+| Allowed powers | Speed, Shield, Unlimited Fire (at least one) | all |
+| Friendly fire | On / Off (team modes) | Off |
+| Control styles allowed | All / Standard only | All |
+| Aim assist allowed | On / Off | On |
+| Recoil turn (Arcade only) | On / Off | On |
+| Recoil angle | 15 to 45 degrees | 30 |
+| Turn assist (Arcade, PC) | On / Off | On (PC), Off (Local Party) |
+| Tap time | 0.12 to 0.30 s | 0.2 s |
+| AFK removal | On / Off | On |
+| Map look | Default / Night | Default |
+Room options (name, visibility, password, spectators, late join, start rule) come from the platform (6.2).
+**Player-level settings (not host):** control style, Hold to rapid fire, aim assist level, auto-fire, stick and button layout.
+
+### 13.2 Presets
+*Classic* (defaults), *Fast Match* (time 1:00, ammo 4, speed 120%), *Chaos* (power boxes Many, ricochets 1, 2 hits, speed 110%), *Duel* (1v1, Team Fight, first to 5), *Big Party* (12 players, Free For All, Auto scaling, power boxes Many), *My preset 1 to 3* (saved locally). A "Reset to Classic" button exists. A plain summary line shows under the form.
+
+### 13.3 Bots in a room
+Bots fill empty seats up to Max players only as the "Fill with bots" setting says. When a human joins, the newest bot on the fuller team leaves (never during a match; during a match the bot leaves at its next respawn). Bots count in the player counter (shown with a robot icon).
+
+---
+
+## 14. TANK ARENA MAPS
+
+**Stage:** 1792 x 828 px. Rect format `(x, y, w, h)` from the top-left. **Mirror rules:** horizontal `x' = 1792 - x - w`; vertical `y' = 828 - y - h`; point mirror = both. Every map is symmetric so no team has an advantage. Positions come from a visual trace of a reference and are approximate: tune by playtest. Layouts are inspired, not copied: keep names, art and exact numbers your own.
+**Themes:** Steel (floor `#A9BFC0` riveted tiles with a diagonal sheen; pit `#4A4A4A`, rim `#B8D4D6`), Sand (`#E8D5A6` soft waves; bricks `#C98A4B`; steel `#9DB6B8`; hazard stripes `#F2C400` and black), Grass (`#3DBB74` speckles; orange outline walls `#C98A4B`; dark fill `#4A4A4A`), River (`#7FA3A8`; banks `#C9822F`; octagon `#B8D4D6`).
+**Load checks:** nothing overlaps a spawn, flag or pad; every spawn (including the generated pools) can reach every pad, flag and power box (grid path check with tank radius 24); every gap on a main route is at least 64 px; each team pool has 6 valid points and the FFA pool 12; log a clear error and fix the data if a check fails.
+
+### 14.1 Map list and recommended players
+| ID | Name | Theme | Modes | Recommended players | Version |
+|---|---|---|---|---|---|
+| A | Steel Yard | Steel | Flag, Team Fight, FFA | 2 to 8 (up to 12) | **v1** |
+| E | Sand Camp | Sand | Flag, Team Fight | 2 to 8 (up to 12) | **v1** |
+| G | Duel Field | Sand | Team Fight, FFA | 2 to 8 (up to 12) | **v1** |
+| H | Sand Cross | Sand | Free For All, Team Fight | 3 to 12 | **v1** |
+| J | Grass Blocks | Grass | Flag, Team Fight | 2 to 8 (up to 12) | **v1** |
+| B Long Wall, C Octagon Pillars, D Block Field, F Power Ring, I Grass Cross, K River Turrets | | | | | later |
+Lobby badges: **BEST** (gold star), Good, OK. Flag: A, E and J are best. Team Fight: G and A. Free For All: H. Nothing is blocked; the badge is advice, and the map card shows the recommended players. Free For All and Team Fight on maps without FFA spawns use the generated pool.
+
+### 14.2 Map A: Steel Yard (Flag, Team Fight, FFA)
+- Border: `(0,0,176,828)`, `(1616,0,176,828)`, `(0,0,1792,32)`, `(0,796,1792,32)`.
+- Corner pits: `(176,0,128,112)` + `(176,112,360,72)`; `(1488,0,128,112)` + `(1256,112,360,72)`; `(176,716,128,112)` + `(176,644,360,72)`; `(1488,716,128,112)` + `(1256,644,360,72)`.
+- Center blocks: `(544,372,304,104)`, `(944,372,304,104)`. Top and bottom bars: `(720,152,352,64)`, `(720,612,352,64)`.
+- Team gates (optional): red `(472,376,64,96)`, blue `(1256,376,64,96)`.
+- Flags and pads: Red flag `(358,420)`, red pad `(270,420)` (shows the blue flag icon); Blue flag `(1434,420)`, blue pad `(1522,420)` (shows the red flag icon).
+- Start spawns: Red `(358,330)` and `(358,498)` facing 90; Blue `(1434,330)` and `(1434,498)` facing 270.
+- **Spawn area:** Red `(190,196,320,440)`, Blue mirrored `(1282,196,320,440)`.
+- Respawn bays (visual): `(344,72)`, `(344,756)`, `(1448,72)`, `(1448,756)`.
+- Power boxes: `(896,330)`, `(896,498)`. Floor: Steel.
+
+### 14.3 Map E: Sand Camp (Flag, Team Fight)
+- Border: invisible walls at x 120 and 1672, y 0 and 828. Floor: Sand.
+- Steel C-bays: top-left `(272,0,176,36)`, `(272,112,176,36)`, `(272,0,36,148)`; top-right `(1344,0,176,36)`, `(1344,112,176,36)`, `(1484,0,36,148)`; bottom-left `(272,792,176,36)`, `(272,680,176,36)`, `(272,680,36,148)`; bottom-right `(1344,792,176,36)`, `(1344,680,176,36)`, `(1484,680,36,148)`. Respawn spots: `(380,74)`, `(380,754)`, `(1412,74)`, `(1412,754)`.
+- Brick runs (3 bricks each): left base horizontal at `(156,254)` and `(156,550)`, vertical at `(276,284)` and `(276,434)`; right base mirrors `(1504,254)`, `(1504,550)`, `(1488,284)`, `(1488,434)`.
+- Striped steel barriers (point-symmetric): `(764,176,84,160)`, `(944,492,84,160)`.
+- Flags and pads: Red flag `(222,414)`, pad `(134,414)`; Blue flag `(1570,414)`, pad `(1658,414)`.
+- Start spawns: Red `(225,330)`, `(225,500)`; Blue `(1567,330)`, `(1567,500)`.
+- **Spawn areas:** Red `[(160,290,110,250), (320,170,230,500)]`, Blue mirrored `[(1522,290,110,250), (1242,170,230,500)]`.
+- Crate `(896,696)`. Bushes (decoration): `(738,55)`, `(1165,128)`, `(1120,340)`, `(492,535)`, `(648,755)`, `(1120,698)`.
+
+### 14.4 Map G: Duel Field (Team Fight, FFA)
+- Play area: sand `(224,148,1344,514)` plus four alcoves `(314,36,90,112)`, `(1388,36,90,112)`, `(314,662,90,112)`, `(1388,662,90,112)`; everything else is a solid steel-floor border.
+- Brick columns (3 bricks each): `(456,286)`, `(456,434)`; mirrors `(1308,286)`, `(1308,434)`.
+- Start spawns: Red `(358,366)`, `(358,462)`; Blue `(1434,366)`, `(1434,462)`.
+- **Spawn area:** Red `(236,160,200,490)`, Blue mirrored `(1356,160,200,490)`.
+- Respawn bays: `(358,72)`, `(358,762)`, `(1434,72)`, `(1434,762)`.
+- Bushes (decoration): `(684,304)`, `(1108,304)`, `(908,222)`, `(896,572)`, `(1120,496)`. Crate `(360,720)`. Power boxes (optional): `(896,300)`, `(896,528)`.
+
+### 14.5 Map H: Sand Cross (Free For All, Team Fight, 3 to 12 players)
+- Striped steel cross: `(854,214,84,160)`, `(558,380,196,70)`, `(1040,380,196,70)`, `(854,456,84,160)`.
+- Brick L shapes (3 + 3 bricks, point-symmetric): top-left row `(246,190)` and column `(366,58)`; top-right row `(1414,190)` and column `(1398,58)`; bottom-left row `(246,610)` and column `(366,638)`; bottom-right row `(1414,610)` and column `(1398,638)`.
+- **FFA spawns (12):** `(260,90)`, `(1530,90)`, `(260,738)`, `(1530,738)`, `(896,80)`, `(896,748)`, `(200,414)`, `(1592,414)`, `(560,200)`, `(1232,200)`, `(560,628)`, `(1232,628)` (the first four are the original corner spawns).
+- **Team spawn areas** (Team Fight): Red (left half) `(140,60,560,708)`, Blue mirrored `(1092,60,560,708)`.
+- Bushes (decoration): `(738,55)`, `(1165,128)`, `(1376,312)`, `(492,535)`, `(1590,515)`, `(648,755)`. Crater (decoration) `(1120,698)`.
+
+### 14.6 Map J: Grass Blocks (Flag, Team Fight)
+- Play area `(176,32,1440,764)` with thin orange outline walls as the border.
+- Blocks: `(642,148,132,108)`, `(964,148,132,108)`, `(696,572,132,108)`, `(1018,572,132,108)`.
+- T-walls: left bar `(270,296,44,256)` with stubs `(176,296,94,32)`, `(176,520,94,32)`; right bar `(1478,296,44,256)` with stubs `(1522,296,94,32)`, `(1522,520,94,32)`.
+- Notches: `(448,32,88,40)` and `(1256,756,88,40)`.
+- Flags (the flag stands on its own pad in this map): Red pad and flag `(358,728)`, Blue pad and flag `(1434,100)`. "Own flag must be home" is always ON here.
+- Start and respawn spots: Red `(356,660)`, `(446,736)`; Blue `(1436,168)`, `(1346,92)`.
+- **Spawn areas (point mirror):** Red `(190,520,420,260)`, Blue `(1182,48,420,260)`.
+- Bushes (decoration): `(403,423)`, `(805,423)`, `(985,423)`, `(1390,423)`.
+
+### 14.7 Later maps (same data format)
+B Long Wall (long vertical center wall, small side blocks, one crate), C Octagon Pillars (open floor, two octagon pillars), D Block Field (small blocks, octagon, crates, Team Fight), F Power Ring (8 power boxes around a center slab), I Grass Cross (center slab, notched corners), K River Turrets (two turrets on octagons, 6 power boxes in two columns). Each needs a thumbnail, spawn areas and the load checks. For bigger rooms a **Large Arena** map (wider stage) is planned after v1.
+
+### 14.8 Thumbnails and the map card
+Each map thumbnail (640 x 360) is generated in code from the map data (walls, bricks, flags, pads, spawn areas, power boxes, bays). The **Map Preview Card** in the lobby (520 x 360 on desktop) shows the thumbnail, name, description, "best for" badge, recommended players, theme, hazard icons and the "how to win" line of the selected mode. It updates for everyone within 200 ms when the host changes the map or mode.
+
+---
+
+## 15. TANK ARENA BOTS
+Bots send the same input as players (`TankInput`, using the STEER style internally: heading + throttle + fire counter) with the same speed and turn caps. They get no extra information, never use aim assist and cannot see through walls.
+| Difficulty | Reaction | Aim error | Behavior |
+|---|---|---|---|
+| Easy | 0.6 s | 20 degrees | wanders toward enemies, wastes shells, ignores power boxes |
+| Medium | 0.35 s | 10 degrees | targets the nearest enemy, grabs power boxes, avoids shells poorly |
+| Hard | 0.15 s | 4 degrees | uses cover, leads shots, hunts the flag carrier, dodges shells |
+Method: path on a coarse grid; fire when an enemy is within the aim error in front with a line of sight and ammo is available. **Flag roles:** Attacker (go for the enemy flag), Carrier (shortest safe path to its own pad), Defender (stay within 350 px of its flag), Recoverer (hunt the enemy carrier or touch a dropped own flag); with larger teams the roles are split roughly 40% Attacker, 30% Defender, 30% Recoverer, and only one bot goes for the flag at a time. **Team Fight and FFA:** hunt the weakest visible enemy; retreat toward the spawn area when out of ammo. Bots keep a short random delay so they feel human and are never perfect. Up to 11 bots run in Solo; the server budget for bot thinking is 2 ms per tick per room (bots think in turns when the room has many). Solo and Local Party use the same bot code locally.
+
+---
+
+## 16. TANK ARENA ANIMATION AND EFFECTS
+All effects are client-side and never change the simulation. Use object pools. Provide a Low quality version of each (fewer particles, no shake, no smoke).
+| Event | Effect |
+|---|---|
+| Drive | tracks alternate frames, dust puffs behind (sand: tan, steel: none, grass: green specks), engine hum |
+| Fire | muzzle flash (4 frames, 40 fps), barrel recoil 8 px, small smoke puff, camera kick 2 px, shell with a short tracer trail in the player's color |
+| Recoil turn (Arcade) | hull rotates 30 degrees in 0.12 s with a small skid mark |
+| Shell hits brick | brick cracks (first hit) or breaks (second): 4 flying pieces with spin and drag, dust puff, small crater decal that fades in 15 s |
+| Shell hits steel or pit | spark burst and a short "ping" |
+| Shell hits crate | wood splinters (4 pieces), maybe a power item pops out |
+| Shell hits tank | white flash 0.08 s, hit spark, then destruction |
+| Tank destroyed | white flash, orange burst (explosion sheet 8 frames, 24 fps), shockwave ring 0.3 s, 8 sparks, turret pops off and spins 0.8 s, hull becomes a charred wreck for 2 s with smoke, then fades (with 9 or more players wrecks last 1 s) |
+| Respawn | tank appears in the spawn pool point with a light beam 0.4 s; where the map has bays, behind X barriers; the digit counts 3-2-1; the tank blinks (shield) for 1.5 s |
+| Late join | "Joined late" tag above the tank for 3 s |
+| Power box touched | box pops; on return scale 0 to 1.2 to 1; 12 sparkles; power icon pops above the tank |
+| Speed, Shield, Unlimited | blue flame and speed lines; blue ring that pops with a burst; glowing barrel |
+| Flag | flag waves (4 frames, 6 fps); carried flag floats above the tank with a faster wave; dropped flag blinks with a ring; capture: confetti burst and a "FLAG!" banner; return: sparkle |
+| Round start and end | "3-2-1" pop, big "START!" outlined text, "WINNER" banner with curved text and confetti (150 pooled particles) |
+| Kill feed line | slides in 200 ms, fades after 3 s |
+| Aim ring (Mouse Steer) | small ring at the cursor with a thin line to the barrel |
+Never flash the screen more than 3 times per second. Particle budget: High 300, Medium 150, Low 60 (auto-lower if FPS stays under 40 for 5 s, and automatically one level lower when 9 or more tanks are in the match).
+
+---
+
+## 17. TANK ARENA HUD
+
+### 17.1 Online and Solo (one player per device)
+| Element | Position and look |
+|---|---|
+| Top bar | glass strip: team scores (Red left, Blue right, big numbers 40 px) or in FFA your points and the leader's points; timer in the middle (pulses red under 30 s); your control-style icon next to your name |
+| Ammo rack | 5 shell icons under the player's score card (full = ready, dark = used, a ring fills while one returns); on touch a small copy above the FIRE button |
+| Power icon | next to the ammo rack with a shrinking ring |
+| Respawn digit | center of the screen over the player's spawn point (3-2-1) |
+| Flag status | two flag icons in the top bar: Home / Carried / Dropped, with the carrier's name |
+| Kill feed | under the top bar, left, 4 lines max |
+| Name tags | above every tank (12.10) |
+| Pause, mute, scoreboard | top-right buttons (scoreboard button on touch) |
+| PC hint chips | bottom, 10 s on the first match (for example "Hold Space: drive. Click: fire"), then fade; `?` brings them back |
+| Touch controls | stick and FIRE (10.5), translucent, with a first-match hint |
+
+### 17.2 Local Party (2 to 4 players, one screen)
+- **Corner buttons** (center at (140,113), (1652,113), (140,715), (1652,715), radius 90 logical, at least 120 px on screen): colored, with a hand icon, pale while pressed or while the player is dead.
+- **Ammo racks** (112 x 180 px) beside each corner button, vertical, 5 slots.
+- **Score boxes** (black rounded boxes with a white outline) at the top and bottom, **mirrored** (the bottom copy rotated 180 degrees) with the timer in the middle.
+- **Respawn digit** in the small white box at each corner, rotated toward its player (0 when alive).
+- "START!" and "WINNER" texts appear rotated toward each player's corner (or each team side).
+- When a physical keyboard or gamepad is assigned to a player, that player's corner button is hidden.
+
+### 17.3 Scoreboard (Tab, touch button, Results)
+Glass table, scrolls, 12 rows: rank, color badge, nickname, team, points, deaths, accuracy, flags (Flag mode), ping. Team totals on top in team modes. Your row is highlighted.
+
+### 17.4 Spectators
+See the whole stage with both score boxes, the timer, the kill feed, name tags and a "Spectating" tag; a **Join match** or **Take a seat** button when allowed. No controls shown.
+
+---
+
+## 18. AUDIO
+Generate with the Web Audio API (no files needed) or use free CC0 sounds (each file under 100 KB). Audio starts after the first tap or key ("Tap to start" on the Title screen). Master, music and effects sliders plus a mute button (`Ctrl+M` on PC). Sounds are positional (stereo pan by x) in Tank Arena; with 9 or more tanks, distant sounds are lowered and at most 12 sounds play at once (priority: your own, near explosions, others).
+| Event | Sound |
+|---|---|
+| Drive | low engine hum with pitch rising slowly |
+| Fire | punchy "pop" plus a short tail; pitch randomized +-5% |
+| Shell hits brick / steel / crate | dull thud / metal ping / wood crack |
+| Tank destroyed | layered boom, debris rattle, small pops |
+| Out of ammo | dry click |
+| Power box | rising chime; power end: soft down tone |
+| Flag taken / dropped / returned / captured | alarm horn / low tone / soft chime / fanfare |
+| Respawn countdown / barrier opens | tick per second / swoosh |
+| Countdown 3-2-1 and START | beeps and a bright hit |
+| WINNER / TIME | fanfare / buzzer |
+| Friend joins the lobby / ready / room full | soft blip / chime / low tone |
+| UI hover, click, ready, toast | soft tick, pop, chime, ding |
+Menu music is calm, game music is lively, both at 25% volume by default.
+
+---
+
+## 19. ART ASSETS
+**Principle:** PNG sprites loaded by the AssetManager with a loading bar. If a file is missing, draw a simple code shape of the same size. All art is original (or CC0 with credit). Ask the AI to generate sprites in one consistent cartoon style: thick 2 px outlines, bright flat colors, soft shadow bottom-right. One neutral tank set is **tinted in code** for all 12 colors.
+| File | Size | Use |
+|---|---|---|
+| `tanks/tank_neutral.png` (2 track frames), optional `tank_red/blue/yellow/green.png` | 66 x 52 | tanks (tinted per player color; shape badge drawn on top) |
+| `fx/shell.png` | 16 x 10 | shell (tinted per player) |
+| `fx/muzzle.png` | 48 x 48, 4 frames | muzzle flash |
+| `fx/explosion.png` | 128 x 128, 8 frames | explosion |
+| `fx/shockwave.png`, `smoke.png`, `spark.png`, `dust.png`, `confetti.png`, `sparkle.png` | small | particles |
+| `fx/crater_1.png`, `crater_2.png`, `skid.png` | 48 to 96 | ground decals |
+| `fx/debris_brick.png`, `debris_wood.png`, `debris_turret.png` | 12 to 32 | debris |
+| `world/tile_steel.png`, `tile_sand.png`, `tile_grass.png`, `tile_river.png` | 64 x 64 seamless | floors |
+| `world/brick.png`, `brick_cracked.png` | 44 x 28 | bricks |
+| `world/pit_9slice.png`, `world/barrier_hazard.png` | 9-slice 64 x 64 / 84 x 160 | walls |
+| `world/crate.png`, `bush.png`, `powerbox.png`, `pad.png`, `flag_red.png`, `flag_blue.png` (4 frames), `gate.png`, `octagon.png` | various | objects |
+| `ui/icon_*.svg`, shape badges (circle, square, triangle, star, diamond, hexagon, cross, heart) | 24 to 64 | UI icons (including control-style icons) |
+| `ui/logo.png`, game icon 512 x 512, banner 1280 x 720 | | Hub and cards |
+Put files in `/games/tank-arena/assets/` and list every third-party item in `credits.json` and the Credits page.
+
+---
+
+## 20. SETTINGS, SAVING AND ACCESSIBILITY
+
+**Settings tabs**
+- **Audio:** master, music, effects, UI sounds, mute.
+- **Graphics:** quality (Auto, High, Medium, Low), resolution scale (50% to 100%), show FPS and ping, particles on/off, screen shake on/off, theme (Dark, Light, High contrast), accent color, density.
+- **Controls:** control style per device, tap time, hold delay, recoil angle, turn assist, hold to rapid fire, aim assist, auto-fire, stick size and dead zone, joystick type, button size and opacity, left-handed, haptics, gamepad dead zone and calibration, key remap, key test, **Edit touch controls**, **Practice range**, **Reset controls**.
+- **Accessibility:** UI scale (100% to 150%), colorblind-safe colors and shape badges, reduced motion, high contrast, large text, auto-fire, one-handed layout, vibration.
+- **Data:** export and import settings (JSON), reset tips, reset all data.
+**Saved in localStorage:** `oa.profile`, `oa.settings`, `oa.settings.controls.<device>`, `oa.favorites`, `oa.recentRooms`, `oa.stats.<gameId>`, `oa.history`, `oa.presets.<gameId>`, `oa.roomDefaults` (last room options). `sessionStorage`: `oa.playerToken`. Never store personal data on the server.
+
+---
+
+## 21. RULES AND EDGE CASES (implement every row)
+
+**Platform and rooms**
+| # | Situation | Required behavior |
+|---|---|---|
+| P1 | Room full | "Room is full (12/12)" with "Watch as spectator" if allowed |
+| P2 | Match in progress | "Match running: watch as spectator", then "Join match" if late join allows |
+| P3 | Host leaves | Earliest-joined human becomes host, toast "[name] is now the host" |
+| P4 | Player disconnects | Seat held 60 s, game object parked and safe, then removed (score kept as "left") |
+| P5 | Duplicate or invalid nickname | Add (2), (3); empty or HTML names become "Player" + 3 digits |
+| P6 | Kicked | "You were removed by the host"; cannot rejoin for 60 s |
+| P7 | Wrong code or room gone | "Room not found" / "That room no longer exists" |
+| P8 | Setting out of range (modified client) | Server clamps to range |
+| P9 | One room crashes | try/catch; other rooms continue; error logged |
+| P10 | Browser tab hidden | Local Party and Solo pause; online sends neutral input; AFK after 20 s, spectator after 45 s |
+| P11 | Window resize, rotation, fullscreen | Rescale instantly, keep state, clear inputs |
+| P12 | Offline | Local and Solo work; online buttons disabled with a message |
+| P13 | Old cached version | "New version, tap to update" |
+| P14 | Audio blocked | "Tap to start"; silent until the first tap |
+| P15 | Fullscreen, orientation lock or wake lock unsupported | Hide or show a tip; never an error |
+| P16 | Browser back button | Previous screen; during a match a confirm dialog |
+| P17 | Clocks differ | Server time offset used for match, respawn and power timers |
+| P18 | Lag spike | Extrapolate up to 200 ms, then freeze with a lag icon, blend within 150 ms |
+| P19 | Rematch | Scores reset; players, teams, settings kept; leavers removed |
+| P20 | Two players want the same key | Conflict warning, second choice rejected |
+| P21 | Host lowers Max players below the current count | Not allowed; the control stops at the current count with a tooltip |
+| P22 | Two friends take the last seat in the same instant | The server processes in order; the second gets "Room is full" and can watch |
+| P23 | An open room fills or starts while listed | The list updates within 5 s; a join attempt is handled by P1 or P2 |
+| P24 | Host uses "Make host" | Toast for everyone; the old host stays as a player with no host rights |
+| P25 | "Start anyway" with players not ready | They watch this match as spectators and return to their seats in the lobby |
+| P26 | Room code collision or unwanted word | A new code is generated; blocklist checked |
+| P27 | Spam: many creates, joins or messages | Friendly rate-limit message with a wait time; repeated abuse closes the socket |
+| P28 | Many players leave and only 1 human remains in a match | Match continues against bots if any (T15); otherwise ends with "Waiting for players" and returns to the lobby |
+| P29 | Open room with a password | Listed with a lock icon; password asked before joining |
+| P30 | Everyone in the lobby is a spectator or the host closes the room | The room closes and everyone sees "The host closed the room" |
+
+**Tank Arena**
+| # | Situation | Required behavior |
+|---|---|---|
+| T1 | Two tanks destroy each other on the same tick | Both die; both teams score; if that decides the match it is a draw point and sudden death starts |
+| T2 | Shell hits a shielded or spawn-shielded tank | Shell destroyed, shield used (spawn shield only ripples), no kill |
+| T3 | Tank spawns where another tank stands | Spawn waits up to 1 s, then uses the next free pool point; never overlaps |
+| T4 | Carrier destroyed, disconnects or leaves | Flag drops there (pushed out of walls); returns after the return time or at once when its own team touches it |
+| T5 | Carrier reaches own pad but own flag is away (strict ON) | No capture; message "Your flag is taken!"; carrier keeps the flag |
+| T6 | Both flags carried at once | Allowed; with strict OFF the first carrier to touch their pad wins |
+| T7 | Dead tank touches a power box or flag | No pickup |
+| T8 | Two tanks touch a power box or flag on the same tick | Closer tank wins; equal: earlier input time |
+| T9 | Power expires while carrying a flag | Normal; carrier slowdown stays |
+| T10 | Ammo 0 and player fires | Dry click, no shell, recoil turn does NOT happen |
+| T11 | Fire while the tank is pushed into a wall | Recoil turn is cut short at wall contact; the hull never overlaps a wall |
+| T12 | Brick destroyed under a tank | A brick cannot be destroyed while a tank touches it |
+| T13 | Time up in Flag with equal captures | 30 s sudden death, then a draw |
+| T14 | Reaching the win limit | Match ends that tick; later events ignored |
+| T15 | Team has 0 humans mid-match | Bots continue if present; otherwise the other team wins by forfeit |
+| T16 | Player joins mid-match | Spectator first, then "Join match" if late join is allowed (T24) |
+| T17 | Local Party: finger leaves the corner button | Press stays active until the finger lifts (pointer capture) |
+| T18 | Local Party: 4 fingers trigger system gestures | Release inputs, show the tip, keep the match paused |
+| T19 | Floating point drift | Fixed step, rounded positions, shared seeded random, no `Date.now()` in the step |
+| T20 | Missing PNG or sound | Code-drawn fallback, never a blank screen |
+| T21 | Spawn pool smaller than the players | Relax spacing to 48 px; then wait 1 s and use the farthest free point; never overlap |
+| T22 | A 7th player tries to join a team of 6 | Join button disabled "Team full (6/6)"; the player goes to the other team or spectates |
+| T23 | Players join or leave in the lobby with "Auto" settings | Time, points and captures recalculate; manual values stay |
+| T24 | Late join during sudden death or after 70% of the time | Not allowed; the player stays a spectator and sees why |
+| T25 | Name tags overlap with many tanks | Tags are offset up to 12 px and fade by distance (12.10) |
+| T26 | Kill feed overflow (many kills in 1 s) | Show the newest 4; drop older lines |
+| T27 | Scoreboard ties | Order by points, then fewer deaths, then accuracy |
+| T28 | AFK player holding the flag | The flag drops when they become a spectator (T4) |
+| T29 | Bots and humans balance changes (a human joins a team with bots) | The newest bot on the fuller team leaves at its next respawn |
+| T30 | Team sizes uneven (for example 6 vs 4) | Allowed with a warning; "Fill with bots: Even teams" fixes it at start |
+
+**Controls**
+| # | Situation | Required behavior |
+|---|---|---|
+| C1 | Keyboard ghosting (several keys at once) | Key test screen; arrow keys as fallback; never a crash |
+| C2 | Click on a HUD or menu element during a match | Does not fire |
+| C3 | Window loses focus while Space or a stick is held | All inputs release, the tank stops |
+| C4 | Space presses a focused button | Focus is blurred at match start and `preventDefault` is used during the match |
+| C5 | Finger moves from the stick area to FIRE (or the reverse) | The finger keeps its first role (pointer capture) |
+| C6 | More than 2 touches online | Extra touches ignored (Local Party allows 4) |
+| C7 | Orientation change mid-match | Controls re-layout; Local Party pauses; online sends neutral input |
+| C8 | Change of control style in a match | Only from the pause menu; online it applies from the next respawn; the server validates |
+| C9 | Left-handed swap | Mirrors the layout and saves it |
+| C10 | Gamepad stick drift | Dead zone 0.2 plus a calibration slider |
+| C11 | Mixed control styles in one match | Allowed unless the host locks to Standard; the style icon shows in the lobby |
+| C12 | Non-QWERTY keyboard | Physical key codes used; labels follow the layout when available |
+| C13 | Edge swipe or Safari back gesture | Controls stay 24 px from edges; one-time tip; browser back asks for confirmation in a match |
+| C14 | Input delay above 50 ms | Debug overlay shows input latency; the game never waits for `click` |
+| C15 | Mouse leaves the window | Release the fire input; the aim ring stays at the last point |
+| C16 | Hold to rapid fire runs ammo to 0 | Dry click, rapid fire stops until a shell returns |
+
+---
+
+## 22. BUILD PHASES (give to AI Studio one at a time)
+
+| Phase | Paste sections | Work | Test |
+|---|---|---|---|
+| **P0 Platform skeleton** | 1, 2, 4, 5 | Folder structure, `GameModule`, registry, `_template` game, router, empty Hub | `_template` shows on the Hub and opens; no platform edit needed to add it |
+| **P1 Design system and screens (mock data)** | 6, 7, 8, 9, 20 | Tokens, themes, components, Hub, Game Detail, **Create Room**, **Join Room with Open rooms**, **12-player Lobby** (mock players, empty slots, invite panel), Local and Solo Setup, Results, Settings, Profile, How to Play, Control Setup, Touch Editor, command palette, share sheet, onboarding (all with fake data; keyboard, mouse and touch navigation) | No dead ends; works at phone, tablet, desktop sizes; the lobby scrolls smoothly with 12 mock players |
+| **P2 Tank Arena prototype (offline)** | 10, 12, 14.2, 16, 17.1, 19, 21 (C rows) | One tank on Map A; all 3 PC styles, all 3 touch styles, gamepad; ammo rack, pit walls, effects, sounds, aim assist, practice range, input hints | Feels right on a real PC and a real phone; 60 FPS; no tunneling; every style tested |
+| **P3 Local Party** | 10.4 D, 10.5 D, 17.2 | 2 to 4 players, corner buttons, keys, gamepads, mirrored HUD, respawn bays | 4 people can play on one screen |
+| **P4 Modes, maps, powers** | 12, 13, 14, 21 (T rows) | Flag, Team Fight, Free For All, bricks, crates, power boxes, 5 maps, **spawn pools**, map checks, thumbnails, auto scaling | Each mode finishes correctly on each map with 2, 6 and 12 tanks |
+| **P5 Bots and Solo** | 15 | Bots with difficulty, Solo setup (1 to 11 bots), bot roles | Solo plays full matches with 11 bots at 60 FPS |
+| **P6 Platform server, rooms and lobby** | 6, 11, 21 (P rows) | Express + ws, rooms with options, **codes, links, QR, open rooms list, quick join**, lobby from schema with up to 12 players, teams, ready and start rules, chat, kick, ban, make host, late join, spectators, reconnect, rate limits, control-style sync | 4 tabs create and join; open rooms list and quick join work; start anyway; host leaves and returns |
+| **P7 Netcode and load test** | 11, 12.2, 10.7, 10.8 | 30 Hz server, compact snapshots, shell events, `TankInput`, prediction, interpolation, per-style caps, `?lag`, **`tools/loadtest.ts`** | Smooth at 150 ms; `loadtest --rooms 5 --players 12`: tick time under 10 ms, under 15 KB/s per client, no errors |
+| **P8 Polish** | 16, 17, 18, 19 | All animations, audio, quality levels (auto lower with 9+ tanks), night variant, accessibility, name tags, kill feed, scoreboard | Low quality runs on a weak phone with 12 tanks |
+| **P9 PWA and app** | 24 | Manifest, service worker, offline Local and Solo, install button, update prompt, fullscreen, wake lock | Installs on Android and desktop; offline works |
+| **P10 Full QA** | 23 | Run the whole checklist, fix bugs, write `QA_REPORT.md` | All boxes ticked |
+| **P11 Deploy and friends test** | 24 | Cloud Run (max instances 1) or office PC, smoke test with 2 real devices, then a real match with 6 to 12 friends | Deployed URL works; everyone joins by code and plays |
+| **P12 Next-game rehearsal** | 5.3 | Add a tiny second game from `_template` and remove it again | No `/platform` file changed |
+After each phase the AI reports: completed work, files changed, how to test, bugs found and fixed, known issues, remaining tasks.
+
+---
+
+## 23. QA CHECKLIST
+**Platform and rooms**
+- [ ] `_template` appears on the Hub, opens, can be created and joined, with no platform edit
+- [ ] Lobby settings form is built from `settingsSchema`; Control Setup is built from `controlStyles`
+- [ ] Create room with name, private or open, password, max players; the code, link and QR work
+- [ ] 12 players join one room by code, by link, by QR and from Open rooms; Quick Join works
+- [ ] Join and leave animations, grouped toasts and the player counter are correct
+- [ ] Ready, "Start anyway", auto-start, late join, "Take a seat", spectators (up to 20)
+- [ ] Kick, ban, make host, host leaves, host closes the room, reconnect within 60 s
+- [ ] Wrong code, full room, password, rate limits, room code collision
+- [ ] Hub filters, search, favorites, recent rooms work with at least 12 dummy cards
+- [ ] Every screen in Section 8 works on phone, tablet and desktop; no dead ends; keyboard and touch navigation
+- [ ] Themes (Dark, Light, High contrast), accent colors, UI scale and reduced motion work on every screen
+- [ ] Command palette finds games, rooms, settings and Quick Join; every action also has a normal button
+- [ ] Share sheet: copy link, WhatsApp, Web Share, QR download
+- [ ] Settings save, load, export, import, reset
+- [ ] PWA installs; Local Party and Solo work offline; update prompt works
+- [ ] No console errors; Chrome, Edge, Firefox, Safari (desktop and mobile)
+**Controls**
+- [ ] PC: Arcade (hold Space drives at once, click fires, A/D assist), Standard, Mouse Steer all work with correct speeds and turn rates
+- [ ] Touch: Twin-Thumb (floating stick, dead zone, 60% pivot rule), Tank Pad and One-Thumb Arcade work with 2 thumbs and no browser gestures
+- [ ] Gamepad works and hot-plugs; dead zone and calibration work
+- [ ] A click on a HUD or menu never fires; Space never presses a focused button
+- [ ] Touch editor: move, resize, opacity, left-handed, reset; saved per device
+- [ ] Practice range works for every style; the first-run picker saves the choice
+- [ ] Style icons show in the lobby; the host lock to Standard works
+- [ ] Aim assist Light nudges only within 10 degrees and 500 px and never auto-fires; Off really disables it
+- [ ] Rows C1 to C16 are each tested once
+**Tank Arena**
+- [ ] Ammo 5, returns 1 per 1.5 s, dry click at 0, rack matches
+- [ ] Arcade recoil turns alternate right then left and reset at respawn
+- [ ] Bricks break in 2 hits, steel never; no tank sticks to a wall; shells never pass through walls
+- [ ] Power boxes hide, give a random power for the right time, and return after 12 s
+- [ ] Flag: pick up, carry, drop, return (10 s or touch), capture; strict option; time up and sudden death; 6v6
+- [ ] Team Fight and Free For All end correctly with 2, 6 and 12 tanks; Auto scaling values match 12.7
+- [ ] Spawn pools give 6 valid points per team and 12 for FFA on every map; no overlap at spawn
+- [ ] Name tags, kill feed and scoreboard readable with 12 tanks
+- [ ] All 5 maps load and pass the checks; the lobby map card updates for all players and shows recommended players
+- [ ] Local Party works with 2, 3, 4 players using touch, keyboard and gamepad (and mixed); mirrored HUD correct
+- [ ] Solo with 1 to 11 bots on every mode and map; Easy, Medium, Hard feel different
+- [ ] Respawn digit counts 3-2-1; bays and pool spawns work
+- [ ] Every row P1 to P30, T1 to T30 and C1 to C16 is tested at least once
+**Online and performance**
+- [ ] 2, 4, 8 and 12 players online; 150 ms latency with 3% loss stays playable; a modified client cannot fire faster, exceed ammo, move faster, change settings or teleport
+- [ ] Load test: 5 rooms x 12 players for 10 minutes: tick time under 10 ms, under 15 KB/s per client, no errors, no memory growth after 20 matches
+- [ ] 60 FPS on a normal PC and a mid phone with 12 tanks; Low quality on a weak phone
+**Game QA template (copy for every new game):** Hub card and detail page, Create Room and Open rooms, modes, settings schema, control styles and Control Setup, how-to page, Local/Solo/Online as declared, results screen, edge cases, performance with the game's max players, credits.
+
+---
+
+## 24. DEPLOYMENT AND THE APP
+
+**Google Cloud project error:** if AI Studio shows "Failed to create project... must be created from the Google Cloud console", create a project at console.cloud.google.com with the same Google account and import it in AI Studio. Billing is needed only for deploying the multiplayer server.
+**Option 1: AI Studio deploy (Cloud Run):** WebSockets allowed, request timeout 3600 s, **maximum instances = 1** (rooms live in memory, so everyone must reach the same instance), **minimum instances = 1**, at least 1 vCPU and 512 MB, concurrency 80 or higher (each WebSocket holds a connection), a region near you (India: `asia-south1` Mumbai). The server listens on `process.env.PORT` and serves the site and `/ws`.
+**Option 2: An office PC as the server (best ping, no internet needed):** install Node.js, run `npm install`, `npm run build`, `npm start`; everyone opens `http://<that PC's IP>:3000` and the port is allowed in the firewall. All friends must be on the same network. (PWA install and wake lock need HTTPS, so use Option 1 or a local HTTPS proxy for those.)
+**Option 3:** Render, Railway or Fly.io (check WebSocket support; free tiers may sleep and drop rooms).
+**For friends outside the office:** Option 1 or 3 with the public link; share the code or link by WhatsApp.
+**PWA:** `manifest.webmanifest` (name Office Arena, icons 192 and 512, `display: fullscreen` with `standalone` fallback), a service worker that caches the shell, the Hub and each game's assets after first use; show "Offline: only Local and Solo" when not connected. Use fullscreen (button), `screen.orientation.lock('landscape')` after fullscreen (ignore failure) and `navigator.wakeLock` during a match (ignore if unsupported). Fullscreen may be unavailable on iPhone Safari: show the tip "Add to Home Screen for full screen" (check this in testing).
+**Optional later: store app.** The PWA can be wrapped for the Play Store with a Trusted Web Activity or Capacitor. Not needed for v1.
+**Post-deploy smoke test:** two real devices (one PC, one phone): open the Hub, create a room, join by code, link and QR, play Flag on Map A and Team Fight on Map G, try each control style, check ping, reconnect (toggle Wi-Fi), results and rematch, install the PWA, test offline Solo. **Then a friends test:** 6 to 12 people join one room, play a full Flag match and a Free For All on map H; note lag, joins, and any confusion in the lobby.
+
+---
+
+## 25. DEBUG PROMPTS
+- **Generic:** "Bug: [describe]. Steps: [steps]. Expected: [x]. Actual: [y]. Find the root cause, fix it, check nothing else breaks, re-run related tests."
+- **Platform leak:** "A game file touches platform code or the platform has game rules. Move it behind the GameModule interface (Section 5); the `_template` game must still work."
+- **Rooms:** "Friends cannot join or the lobby is wrong in case [x] (full room, open list, late join, host change). Check Sections 6, 9 and 11 and edge cases P1 to P30; fix and add a test."
+- **Input:** "Controls feel wrong on [device] with style [x]. Check pointer capture, tap time, hold delay, blur handling, the fire counter and Section 10.8; fix and add a test."
+- **Netcode:** "Other tanks jitter or teleport, or bandwidth is too high with 12 players. Check snapshot size, shell events, interpolation (100 ms) and reconciliation; reproduce with ?lag=150 and the load test; fix."
+- **Spawn:** "Tanks overlap or spawn badly with many players. Check the spawn pool in Section 12.9 and edge cases T3, T21; fix."
+- **Collision:** "Tanks stick to walls or shells pass through. Check swept collision, slide response and resolve order; fix."
+- **Flag bug:** "Flag pickup, drop, return or capture is wrong in case [x]. Check Section 12.6 and edge cases T4 to T6; fix and add a test."
+- **Layout:** "A screen breaks at [width] or with 12 players. Check Section 7.3 breakpoints and Section 8 wireframes; fix without breaking other sizes."
+- **Performance:** "FPS below 60 with 12 tanks. Pool particles, cull, cap resolution, lower quality automatically, check name tags and sounds."
+- **Full audit:** "Audit everything against Section 23, list every failure, fix them all, update QA_REPORT.md."
+
+---
+
+## 26. DOCUMENTS AND DELIVERABLES
+The AI must create: `README.md` (run, build, deploy, LAN play, structure), `PLATFORM.md` (architecture, GameModule, protocol), `ROOMS.md` (room options, codes, open rooms, limits, roles, flows), `GAMES.md` (step by step how to add a game with `_template`), `HOW_TO_PLAY.md` (also in the app, including how to invite friends), `CONTROLS.md` (every style per device), `NETWORKING.md` (snapshots, events, limits, load test), `MAPS.md` (map data format, spawn areas, how to add a map), `ASSETS.md` (file list, sizes, replacing a sprite), `UI.md` (tokens and components), `QA_REPORT.md`, `PROGRESS.md`, `CHANGELOG.md`, `credits.json`, and a Credits page.
+**Deliverables:** a working, deployed Office Arena platform with Tank Arena (URL and source); Hub, Game Detail, Create Room, Join Room with Open rooms, Quick Join, Lobby for up to 12, Online Rooms, Local Party, Solo vs Bots; 3 modes, 5 maps, bots, powers, all control styles, all screens and effects; PWA; the `_template` game; the load test; all documents; an honest list of known limitations.
+**Final self-check (YES or NO, fix every NO):** a host can create a room, send the code, and 11 friends join and play; a new game can be added with one folder and one registry line; the UI follows Section 7 on phone, tablet and desktop; PC (keyboard and mouse), touch and gamepad controls work as in Section 10; Online, Local Party and Solo all work; Flag, Team Fight and Free For All work on their maps with up to 12 tanks; all edge cases are handled; the load test passes; QA passes; the deployed URL works from another device.
+**Final instruction:** Start with Phase P0 now. After each phase, stop and report. Do not continue until the phase passes its tests.
+
+---
+
+## 27. GAME BACKLOG (30 ideas, plan only, do NOT build now)
+Each must plug in through `GameModule` with no platform change; the room system (codes, links, open rooms, lobby for many players) is reused as is.
+| # | Game | Type | Players |
+|---|---|---|---|
+| 1 | Tank Arena | real time | 2 to 12 (**v1, this document**) |
+| 2 | Sumo Push | real time | 2 to 8 |
+| 3 | Air Hockey | real time | 2 to 4 |
+| 4 | Snake Battle | real time | 2 to 12 |
+| 5 | Bomber Grid | real time | 2 to 8 |
+| 6 | Pixel Soccer | real time | 2 to 8 |
+| 7 | Quiz Night | timed rounds | 2 to 30 |
+| 8 | Draw and Guess | timed rounds | 3 to 12 |
+| 9 | Word Chain | timed rounds | 2 to 12 |
+| 10 | Carrom | turn based | 2 to 4 |
+| 11 | Ludo | turn based | 2 to 4 |
+| 12 | Snakes and Ladders | turn based | 2 to 6 |
+| 13 | Tic Tac Toe Plus | turn based | 2 |
+| 14 | Connect Four | turn based | 2 |
+| 15 | Chess Lite | turn based | 2 |
+| 16 | Checkers | turn based | 2 |
+| 17 | Rock Paper Scissors Cup | simultaneous | 2 to 32 |
+| 18 | Memory Match | turn based | 2 to 4 |
+| 19 | Reaction Duel | simultaneous | 2 to 12 |
+| 20 | Trivia Race | race | 2 to 12 |
+| 21 | Maze Race | real time | 2 to 8 |
+| 22 | Paint Territory | real time | 2 to 8 |
+| 23 | Dodge Ball Arena | real time | 2 to 10 |
+| 24 | Top-down Racing | real time | 2 to 8 |
+| 25 | Archery Duel | real time | 2 |
+| 26 | Poker Chips Party (no money) | turn based | 2 to 8 |
+| 27 | Spy Hunt (Mafia) | social | 5 to 16 |
+| 28 | Pictionary Charades | social | 4 to 16 |
+| 29 | Escape Room Co-op | co-op | 2 to 6 |
+| 30 | Tower Defense Co-op | co-op | 2 to 6 |

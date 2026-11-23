@@ -1,0 +1,123 @@
+:root {
+  --bg-0: #0B1020;
+  --bg-1: #141B3A;
+  --surface: rgba(255, 255, 255, 0.07);
+  --surface-2: rgba(255, 255, 255, 0.12);
+  --surface-solid: #161E3D;
+  --border: rgba(255, 255, 255, 0.14);
+  --primary: #7C5CFF;
+  --primary-2: #00B8FF;
+  --accent: #00E5C3;
+  --gold: #FFC83D;
+  --danger: #FF4D6D;
+  --success: #3DDC97;
+  --text: #F4F6FF;
+  --text-dim: #A9B2D6;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --glow: 0 0 24px color-mix(in srgb, var(--primary) 55%, transparent);
+  --ui-scale: 1;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --font-display: 'Fredoka', system-ui, -apple-system, sans-serif;
+  --font-body: 'Nunito', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html.theme-light {
+  --bg-0: #F4F6FF;
+  --bg-1: #E6EAFB;
+  --surface: rgba(255, 255, 255, 0.84);
+  --surface-2: rgba(255, 255, 255, 0.96);
+  --surface-solid: #FFFFFF;
+  --border: rgba(20, 27, 58, 0.14);
+  --text: #141B3A;
+  --text-dim: #5A6491;
+  --shadow: 0 8px 26px rgba(20, 27, 58, 0.1);
+}
+
+html.theme-hc {
+  --bg-0: #000000;
+  --bg-1: #000000;
+  --surface: #0A0A0A;
+  --surface-2: #1A1A1A;
+  --surface-solid: #000000;
+  --border: #FFFFFF;
+  --text: #FFFFFF;
+  --text-dim: #E0E0E0;
+  --shadow: none;
+}
+
+html.theme-hc .arena-glass {
+  backdrop-filter: none !important;
+  border-width: 3px !important;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.arena-glass {
+  background: var(--surface);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.arena-glass-interactive {
+  transition: transform 120ms var(--ease), background-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.arena-glass-interactive:hover {
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+
+.arena-btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%);
+  color: #FFFFFF;
+  box-shadow: var(--glow);
+  transition: transform 120ms var(--ease), box-shadow 120ms var(--ease), opacity 120ms var(--ease);
+}
+
+.arena-btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.arena-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.game-stage-lock {
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}

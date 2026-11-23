@@ -1,0 +1,6 @@
+{
+  "name": "Office Arena",
+  "description": "Multiplayer web game platform for office colleagues and friends featuring Tank Arena for 2 to 12 players.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
